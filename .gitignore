@@ -29,3 +29,8 @@ env
 
 # Ignore Python virtual environment folder
 venv/
+
+# Environment variables
+.env.local
+.env.production.local
+.env.development.local
