@@ -2352,21 +2352,9 @@ export default function App() {
     }
     
     return productsData.data.map((item, index) => {
-      // 링크에서 채널 추정 (naver.com -> naver, coupang.com -> coupang)
-      let channel = "naver";
-      let market = "스마트스토어";
-      if (item.link) {
-        if (item.link.includes("coupang.com")) {
-          channel = "coupang";
-          market = "로켓배송";
-        } else if (item.link.includes("gmarket.co.kr")) {
-          channel = "others";
-          market = "G마켓";
-        } else if (item.link.includes("auction.co.kr")) {
-          channel = "others";
-          market = "옥션";
-        }
-      }
+      // 백엔드에서 제공하는 channel, market 사용 (없으면 기본값)
+      const channel = item.channel || "naver";
+      const market = item.market || "스마트스토어";
 
       return {
         id: `o${index + 1}`,
