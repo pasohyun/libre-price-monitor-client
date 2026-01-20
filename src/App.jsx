@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import "./App.css";
 
 import {
@@ -27,7 +27,27 @@ import {
  */
 
 // -----------------------------
-// Mock Data
+// API 호출 함수
+// -----------------------------
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+
+async function fetchLatestProducts() {
+  try {
+    const response = await fetch(`${API_BASE}/products/latest`);
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Failed to fetch latest products:', error);
+    return { snapshot_time: null, count: 0, data: [] };
+  }
+}
+
+// -----------------------------
+// Mock Data (일별/월별 데이터는 백엔드에 없으므로 유지)
 // -----------------------------
 
 const CHANNELS = [
@@ -2300,12 +2320,77 @@ export default function App() {
     packs: [1, 2, 3, 7],
   });
 
+  // API 데이터 상태
+  const [productsData, setProductsData] = useState({
+    snapshot_time: null,
+    count: 0,
+    data: []
+  });
+  const [loading, setLoading] = useState(true);
+
+  // API 데이터 로드
+  useEffect(() => {
+    async function loadData() {
+      setLoading(true);
+      const data = await fetchLatestProducts();
+      setProductsData(data);
+      setLoading(false);
+    }
+    loadData();
+  }, []);
+
+  // 일별/월별 데이터는 백엔드에 없으므로 Mock 데이터 유지
   const data = useMemo(
     () => ({ daily: SAMPLE_DAILY_POINTS, monthly: SAMPLE_MONTHLY_POINTS }),
     []
   );
 
-  const offers = useMemo(() => SAMPLE_OFFERS, []);
+  // 백엔드 데이터를 프론트엔드 형식으로 변환
+  const offers = useMemo(() => {
+    if (!productsData.data || productsData.data.length === 0) {
+      return [];
+    }
+    
+    return productsData.data.map((item, index) => {
+      // 링크에서 채널 추정 (naver.com -> naver, coupang.com -> coupang)
+      let channel = "naver";
+      let market = "스마트스토어";
+      if (item.link) {
+        if (item.link.includes("coupang.com")) {
+          channel = "coupang";
+          market = "로켓배송";
+        } else if (item.link.includes("gmarket.co.kr")) {
+          channel = "others";
+          market = "G마켓";
+        } else if (item.link.includes("auction.co.kr")) {
+          channel = "others";
+          market = "옥션";
+        }
+      }
+
+      return {
+        id: `o${index + 1}`,
+        channel: channel,
+        market: market,
+        seller: item.mall_name || "알 수 없음",
+        productName: item.product_name || "",
+        pack: item.quantity || 1,
+        price: item.total_price || item.unit_price,
+        unitPrice: item.unit_price,
+        url: item.link || "#",
+        capturedAt: productsData.snapshot_time 
+          ? new Date(productsData.snapshot_time).toLocaleString('ko-KR', {
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit'
+            })
+          : "-",
+        captureThumb: item.image_url || "/placeholder.png",
+      };
+    });
+  }, [productsData]);
 
   // 범위/기준가 유효성 보정(입력 실수 방지)
   const safeSettings = useMemo(() => {
