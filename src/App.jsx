@@ -46,14 +46,58 @@ async function fetchLatestProducts() {
   }
 }
 
+async function fetchConfig() {
+  try {
+    const response = await fetch(`${API_BASE}/products/config`);
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to fetch config:', error);
+    return { target_price: 90000, tracked_malls: [], search_keyword: '' };
+  }
+}
+
+async function fetchTrackedMallsSummary() {
+  try {
+    const response = await fetch(`${API_BASE}/products/tracked-malls/summary`);
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to fetch tracked malls summary:', error);
+    return { target_price: 90000, tracked_malls: [], data: [] };
+  }
+}
+
+async function fetchTrackedMallsTrends(days = 7) {
+  try {
+    const response = await fetch(`${API_BASE}/products/tracked-malls/trends?days=${days}`);
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to fetch tracked malls trends:', error);
+    return { days: days, malls: [], data: [] };
+  }
+}
+
+async function fetchMallsTop(limit = 10) {
+  try {
+    const response = await fetch(`${API_BASE}/products/malls/top?limit=${limit}`);
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to fetch malls top:', error);
+    return { count: 0, data: [] };
+  }
+}
+
 // -----------------------------
 // Mock Data (일별/월별 데이터는 백엔드에 없으므로 유지)
 // -----------------------------
 
 const CHANNELS = [
-  { key: "naver", label: "네이버스토어" },
-  { key: "coupang", label: "쿠팡" },
-  { key: "others", label: "기타(G마켓/옥션)" },
+  { key: "naver", label: "네이버스토어", active: true },
+  { key: "coupang", label: "쿠팡", active: false },  // 준비 중
+  { key: "others", label: "기타(G마켓/옥션)", active: false },  // 준비 중
 ];
 
 const MARKET_BY_CHANNEL = {
@@ -1069,13 +1113,20 @@ function GhostButton({ children, onClick }) {
 // Charts
 // -----------------------------
 
-function PriceTrend({ mode, data, height = 240 }) {
+function PriceTrend({ mode, data, malls = [], height = 240 }) {
   // mode: "daily" | "monthly"
   const label = mode === "daily" ? "일별" : "월별";
+  
+  // 판매처별 색상
+  const mallColors = ["#10b981", "#f59e0b", "#3b82f6", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4"];
+  
+  // 판매처 목록이 있으면 사용, 없으면 기본 데이터의 키 추출
+  const displayMalls = malls.length > 0 ? malls : (data.length > 0 ? Object.keys(data[0]).filter(k => k !== 'x' && k !== 'date') : []);
+  
   return (
     <div className="h-[260px]">
       <div className="mb-2 text-sm text-slate-500">
-        표시 기준: {label} · 값: 채널별 대표 판매가(예시)
+        표시 기준: {label} · 값: {malls.length > 0 ? '판매처별 최저가' : '채널별 대표 판매가(예시)'}
       </div>
       <ResponsiveContainer width="100%" height={height}>
         <LineChart
@@ -1086,35 +1137,13 @@ function PriceTrend({ mode, data, height = 240 }) {
           <XAxis dataKey="x" tick={{ fontSize: 12 }} />
           <YAxis
             tick={{ fontSize: 12 }}
-            domain={[80000, 95000]}
-            ticks={[80000, 85000, 90000, 95000]}
+            domain={[75000, 100000]}
+            ticks={[75000, 80000, 85000, 90000, 95000, 100000]}
             tickFormatter={(value) => value.toLocaleString("ko-KR")}
           />
-          {/* 1,000 단위 점선 구분선 (Y축에 표시되지 않는 값들) */}
-          {[
-            81000, 82000, 83000, 84000, 86000, 87000, 88000, 89000, 91000,
-            92000, 93000, 94000,
-          ].map((y) => (
-            <ReferenceLine
-              key={y}
-              y={y}
-              stroke="#cbd5e1"
-              strokeDasharray="3 3"
-              strokeWidth={1}
-            />
-          ))}
           <Tooltip
             content={({ active, payload, label }) => {
               if (!active || !payload || !payload.length) return null;
-
-              // 네이버, 쿠팡, 기타 순서로 정렬
-              const orderedPayload = [];
-              const naver = payload.find((p) => p.dataKey === "naver");
-              const coupang = payload.find((p) => p.dataKey === "coupang");
-              const others = payload.find((p) => p.dataKey === "others");
-              if (naver) orderedPayload.push(naver);
-              if (coupang) orderedPayload.push(coupang);
-              if (others) orderedPayload.push(others);
 
               return (
                 <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
@@ -1122,7 +1151,7 @@ function PriceTrend({ mode, data, height = 240 }) {
                     {label}
                   </div>
                   <div className="space-y-1">
-                    {orderedPayload.map((entry, index) => (
+                    {payload.filter(p => p.value != null).map((entry, index) => (
                       <div
                         key={index}
                         className="flex items-center justify-between gap-4 text-sm"
@@ -1149,18 +1178,10 @@ function PriceTrend({ mode, data, height = 240 }) {
           />
           <Legend
             content={({ payload }) => {
-              // 네이버, 쿠팡, 기타 순서로 정렬
-              const orderedPayload = [];
-              const naver = payload.find((p) => p.dataKey === "naver");
-              const coupang = payload.find((p) => p.dataKey === "coupang");
-              const others = payload.find((p) => p.dataKey === "others");
-              if (naver) orderedPayload.push(naver);
-              if (coupang) orderedPayload.push(coupang);
-              if (others) orderedPayload.push(others);
-
+              if (!payload || !payload.length) return null;
               return (
-                <div className="flex justify-center gap-4 mt-2">
-                  {orderedPayload.map((entry, index) => (
+                <div className="flex flex-wrap justify-center gap-4 mt-2">
+                  {payload.map((entry, index) => (
                     <div key={index} className="flex items-center gap-2">
                       <div
                         style={{
@@ -1178,30 +1199,18 @@ function PriceTrend({ mode, data, height = 240 }) {
               );
             }}
           />
-          <Line
-            type="monotone"
-            dataKey="naver"
-            name="네이버"
-            stroke="#10b981"
-            strokeWidth={2}
-            dot={false}
-          />
-          <Line
-            type="monotone"
-            dataKey="coupang"
-            name="쿠팡"
-            stroke="#ef4444"
-            strokeWidth={2}
-            dot={false}
-          />
-          <Line
-            type="monotone"
-            dataKey="others"
-            name="기타"
-            stroke="#3b82f6"
-            strokeWidth={2}
-            dot={false}
-          />
+          {displayMalls.map((mall, index) => (
+            <Line
+              key={mall}
+              type="monotone"
+              dataKey={mall}
+              name={mall}
+              stroke={mallColors[index % mallColors.length]}
+              strokeWidth={2}
+              dot={false}
+              connectNulls
+            />
+          ))}
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -1752,6 +1761,8 @@ function MainDashboard({
   onGoChannel,
   data,
   offers,
+  mallsSummary,
+  mallsTop,
 }) {
   const [trendMode, setTrendMode] = useState("daily"); // daily/monthly
   const [previewImage, setPreviewImage] = useState(null);
@@ -1919,15 +1930,17 @@ function MainDashboard({
             <PriceTrend
               mode={trendMode}
               data={trendMode === "daily" ? data.daily : data.monthly}
+              malls={data.malls || []}
             />
             <div className="mt-4 flex flex-wrap gap-2">
               {CHANNELS.map((c) => (
                 <Chip
                   key={c.key}
                   active={false}
-                  onClick={() => onGoChannel(c.key)}
+                  onClick={() => c.active && onGoChannel(c.key)}
                 >
                   {c.label} 주요 셀러 보기
+                  {!c.active && <span className="ml-1 text-xs text-slate-400">(준비중)</span>}
                 </Chip>
               ))}
             </div>
@@ -1939,7 +1952,7 @@ function MainDashboard({
         <div className="col-span-12 md:col-span-3">
           <Stat
             label="기준가 이하(전체)"
-            value={`${stats.belowTotal}곳`}
+            value={`${stats.belowNaver}곳`}
             sub={`마지막 수집: ${stats.lastCollected}`}
           />
         </div>
@@ -1947,10 +1960,10 @@ function MainDashboard({
           <Stat label="네이버" value={`${stats.belowNaver}곳`} />
         </div>
         <div className="col-span-12 md:col-span-3">
-          <Stat label="쿠팡" value={`${stats.belowCoupang}곳`} />
+          <Stat label="쿠팡" value="준비 중" sub="크롤링 예정" />
         </div>
         <div className="col-span-12 md:col-span-3">
-          <Stat label="기타" value={`${stats.belowOthers}곳`} />
+          <Stat label="기타" value="준비 중" sub="크롤링 예정" />
         </div>
       </div>
 
@@ -2326,24 +2339,43 @@ export default function App() {
     count: 0,
     data: []
   });
+  const [mallsSummary, setMallsSummary] = useState({ target_price: 90000, tracked_malls: [], data: [] });
+  const [mallsTrends, setMallsTrends] = useState({ days: 7, malls: [], data: [] });
+  const [mallsTop, setMallsTop] = useState({ count: 0, data: [] });
   const [loading, setLoading] = useState(true);
 
   // API 데이터 로드
   useEffect(() => {
     async function loadData() {
       setLoading(true);
-      const data = await fetchLatestProducts();
-      setProductsData(data);
+      const [products, summary, trends, top] = await Promise.all([
+        fetchLatestProducts(),
+        fetchTrackedMallsSummary(),
+        fetchTrackedMallsTrends(7),
+        fetchMallsTop(10)
+      ]);
+      setProductsData(products);
+      setMallsSummary(summary);
+      setMallsTrends(trends);
+      setMallsTop(top);
       setLoading(false);
     }
     loadData();
   }, []);
 
-  // 일별/월별 데이터는 백엔드에 없으므로 Mock 데이터 유지
-  const data = useMemo(
-    () => ({ daily: SAMPLE_DAILY_POINTS, monthly: SAMPLE_MONTHLY_POINTS }),
-    []
-  );
+  // 판매처별 추이 데이터 변환 (그래프용)
+  const data = useMemo(() => {
+    // API 데이터가 있으면 사용, 없으면 Mock 데이터
+    if (mallsTrends.data && mallsTrends.data.length > 0) {
+      // API 데이터를 그래프 형식으로 변환
+      const daily = mallsTrends.data.map(item => ({
+        x: item.date,
+        ...item
+      }));
+      return { daily, monthly: SAMPLE_MONTHLY_POINTS, malls: mallsTrends.malls };
+    }
+    return { daily: SAMPLE_DAILY_POINTS, monthly: SAMPLE_MONTHLY_POINTS, malls: [] };
+  }, [mallsTrends]);
 
   // 백엔드 데이터를 프론트엔드 형식으로 변환
   const offers = useMemo(() => {
@@ -2451,6 +2483,8 @@ export default function App() {
             }
             data={data}
             offers={offers}
+            mallsSummary={mallsSummary}
+            mallsTop={mallsTop}
           />
         )}
 
