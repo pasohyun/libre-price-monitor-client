@@ -90,6 +90,17 @@ async function fetchMallsTop(limit = 10) {
   }
 }
 
+async function fetchMallTimeline(mallName, days = 30) {
+  try {
+    const response = await fetch(`${API_BASE}/products/mall/timeline?mall_name=${encodeURIComponent(mallName)}&days=${days}`);
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to fetch mall timeline:', error);
+    return { mall_name: mallName, days, count: 0, data: [] };
+  }
+}
+
 // -----------------------------
 // Mock Data (일별/월별 데이터는 백엔드에 없으므로 유지)
 // -----------------------------
@@ -2087,7 +2098,10 @@ function ChannelSellers({ channelKey, settings, onBack, onSelectSeller, mallsSum
             {channelKey === "naver" && mallsTrends?.data?.length > 0 ? (
               <PriceTrend
                 mode={mode}
-                data={mallsTrends.data}
+                data={mallsTrends.data.map(item => ({
+                  ...item,
+                  x: item.x || item.date,
+                }))}
                 malls={mallsTrends.malls || []}
               />
             ) : (
@@ -2154,9 +2168,32 @@ function ChannelSellers({ channelKey, settings, onBack, onSelectSeller, mallsSum
 function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
   const [mode, setMode] = useState("daily");
   const [previewImage, setPreviewImage] = useState(null);
+  const [timelineData, setTimelineData] = useState([]);
+  const [timelineLoading, setTimelineLoading] = useState(true);
 
-  const key = `${channelKey}::${sellerName}`;
-  const timeline = SAMPLE_SELLER_TIMELINE[key] ?? [];
+  // API에서 셀러 타임라인 데이터 로드
+  useEffect(() => {
+    async function loadTimeline() {
+      setTimelineLoading(true);
+      if (channelKey === "naver") {
+        const result = await fetchMallTimeline(sellerName, 30);
+        if (result.data && result.data.length > 0) {
+          setTimelineData(result.data);
+        } else {
+          // API 데이터 없으면 Mock 폴백
+          const key = `${channelKey}::${sellerName}`;
+          setTimelineData(SAMPLE_SELLER_TIMELINE[key] ?? []);
+        }
+      } else {
+        const key = `${channelKey}::${sellerName}`;
+        setTimelineData(SAMPLE_SELLER_TIMELINE[key] ?? []);
+      }
+      setTimelineLoading(false);
+    }
+    loadTimeline();
+  }, [channelKey, sellerName]);
+
+  const timeline = timelineData;
 
   const sellerAvg = useMemo(() => {
     if (!timeline.length) return null;
