@@ -1079,6 +1079,8 @@ function Badge({ children, tone = "default" }) {
   const cls =
     tone === "danger"
       ? "bg-red-50 text-red-700 border-red-200"
+      : tone === "warning"
+      ? "bg-amber-50 text-amber-700 border-amber-200"
       : tone === "ok"
       ? "bg-emerald-50 text-emerald-700 border-emerald-200"
       : "bg-slate-50 text-slate-700 border-slate-200";
@@ -1858,9 +1860,18 @@ function MainDashboard({
           ? safeSettings.threshold
           : Infinity;
         const diff = thr - r.unitPrice;
+        const needsCheck = r.calcMethod === "확인필요" || r.calcMethod === "가격역산(보정)" || r.calcMethod === "텍스트분석(범위초과)";
         return (
           <div className="space-y-1">
             <div className="font-semibold">{formatKRW(r.unitPrice)}</div>
+            {needsCheck && (
+              <div className="text-xs">
+                <Badge tone="warning">⚠ 수동확인</Badge>
+                <span className="ml-1 text-amber-600 text-[10px]">
+                  {r.calcMethod === "가격역산(보정)" ? "수량추정" : r.calcMethod === "텍스트분석(범위초과)" ? "범위초과" : "확인필요"}
+                </span>
+              </div>
+            )}
             {Number.isFinite(diff) && diff >= 0 ? (
               <div className="text-xs">
                 <Badge tone="danger">기준가 이하</Badge>
@@ -2272,9 +2283,18 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
             ? Infinity
             : Number(settings.threshold) || Infinity;
         const diff = thr - r.unitPrice;
+        const needsCheck = r.calcMethod === "확인필요" || r.calcMethod === "가격역산(보정)" || r.calcMethod === "텍스트분석(범위초과)";
         return (
           <div className="space-y-1">
             <div className="font-semibold">{formatKRW(r.unitPrice)}</div>
+            {needsCheck && (
+              <div className="text-xs">
+                <Badge tone="warning">⚠ 수동확인</Badge>
+                <span className="ml-1 text-amber-600 text-[10px]">
+                  {r.calcMethod === "가격역산(보정)" ? "수량추정" : r.calcMethod === "텍스트분석(범위초과)" ? "범위초과" : "확인필요"}
+                </span>
+              </div>
+            )}
             {diff >= 0 ? (
               <div className="text-xs">
                 <Badge tone="danger">기준가 이하</Badge>
@@ -2516,6 +2536,7 @@ export default function App() {
         pack: item.quantity || 1,
         price: item.total_price || item.unit_price,
         unitPrice: item.unit_price,
+        calcMethod: item.calc_method || "텍스트분석",
         url: item.link || "#",
         capturedAt: productsData.snapshot_time 
           ? new Date(productsData.snapshot_time).toLocaleString('ko-KR', {
