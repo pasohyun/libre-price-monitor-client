@@ -1,5 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import "./App.css";
+import Report from "./Report.jsx";
+import { Routes, Route, Link } from "react-router-dom";
 
 import {
   LineChart,
@@ -30,7 +32,7 @@ import {
 // API 호출 함수
 // -----------------------------
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 async function fetchLatestProducts() {
   try {
@@ -41,7 +43,7 @@ async function fetchLatestProducts() {
     const data = await response.json();
     return data;
   } catch (error) {
-    console.error('Failed to fetch latest products:', error);
+    console.error("Failed to fetch latest products:", error);
     return { snapshot_time: null, count: 0, data: [] };
   }
 }
@@ -52,8 +54,8 @@ async function fetchConfig() {
     if (!response.ok) throw new Error(`API error: ${response.status}`);
     return await response.json();
   } catch (error) {
-    console.error('Failed to fetch config:', error);
-    return { target_price: 90000, tracked_malls: [], search_keyword: '' };
+    console.error("Failed to fetch config:", error);
+    return { target_price: 90000, tracked_malls: [], search_keyword: "" };
   }
 }
 
@@ -63,40 +65,46 @@ async function fetchTrackedMallsSummary() {
     if (!response.ok) throw new Error(`API error: ${response.status}`);
     return await response.json();
   } catch (error) {
-    console.error('Failed to fetch tracked malls summary:', error);
+    console.error("Failed to fetch tracked malls summary:", error);
     return { target_price: 90000, tracked_malls: [], data: [] };
   }
 }
 
 async function fetchTrackedMallsTrends(days = 7) {
   try {
-    const response = await fetch(`${API_BASE}/products/tracked-malls/trends?days=${days}`);
+    const response = await fetch(
+      `${API_BASE}/products/tracked-malls/trends?days=${days}`,
+    );
     if (!response.ok) throw new Error(`API error: ${response.status}`);
     return await response.json();
   } catch (error) {
-    console.error('Failed to fetch tracked malls trends:', error);
+    console.error("Failed to fetch tracked malls trends:", error);
     return { days: days, malls: [], data: [] };
   }
 }
 
 async function fetchMallsTop(limit = 10) {
   try {
-    const response = await fetch(`${API_BASE}/products/malls/top?limit=${limit}`);
+    const response = await fetch(
+      `${API_BASE}/products/malls/top?limit=${limit}`,
+    );
     if (!response.ok) throw new Error(`API error: ${response.status}`);
     return await response.json();
   } catch (error) {
-    console.error('Failed to fetch malls top:', error);
+    console.error("Failed to fetch malls top:", error);
     return { count: 0, data: [] };
   }
 }
 
 async function fetchMallTimeline(mallName, days = 30) {
   try {
-    const response = await fetch(`${API_BASE}/products/mall/timeline?mall_name=${encodeURIComponent(mallName)}&days=${days}`);
+    const response = await fetch(
+      `${API_BASE}/products/mall/timeline?mall_name=${encodeURIComponent(mallName)}&days=${days}`,
+    );
     if (!response.ok) throw new Error(`API error: ${response.status}`);
     return await response.json();
   } catch (error) {
-    console.error('Failed to fetch mall timeline:', error);
+    console.error("Failed to fetch mall timeline:", error);
     return { mall_name: mallName, days, count: 0, data: [] };
   }
 }
@@ -1027,7 +1035,9 @@ function Card({ title, right, children, className = "" }) {
 
 function Stat({ label, value, sub, highlight }) {
   return (
-    <div className={`rounded-2xl border p-4 shadow-sm transition-all ${highlight ? "border-blue-500 bg-blue-50 ring-2 ring-blue-200" : "border-slate-200 bg-white hover:border-slate-300"}`}>
+    <div
+      className={`rounded-2xl border p-4 shadow-sm transition-all ${highlight ? "border-blue-500 bg-blue-50 ring-2 ring-blue-200" : "border-slate-200 bg-white hover:border-slate-300"}`}
+    >
       <div className="text-sm text-slate-500">{label}</div>
       <div className="mt-1 text-xl font-semibold text-slate-900">{value}</div>
       {sub && <div className="mt-1 text-xs text-slate-500">{sub}</div>}
@@ -1080,10 +1090,10 @@ function Badge({ children, tone = "default" }) {
     tone === "danger"
       ? "bg-red-50 text-red-700 border-red-200"
       : tone === "warning"
-      ? "bg-amber-50 text-amber-700 border-amber-200"
-      : tone === "ok"
-      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-      : "bg-slate-50 text-slate-700 border-slate-200";
+        ? "bg-amber-50 text-amber-700 border-amber-200"
+        : tone === "ok"
+          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+          : "bg-slate-50 text-slate-700 border-slate-200";
   return (
     <span
       className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${cls}`}
@@ -1129,17 +1139,31 @@ function GhostButton({ children, onClick }) {
 function PriceTrend({ mode, data, malls = [], height = 240 }) {
   // mode: "daily" | "monthly"
   const label = mode === "daily" ? "일별" : "월별";
-  
+
   // 판매처별 색상
-  const mallColors = ["#10b981", "#f59e0b", "#3b82f6", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4"];
-  
+  const mallColors = [
+    "#10b981",
+    "#f59e0b",
+    "#3b82f6",
+    "#ef4444",
+    "#8b5cf6",
+    "#ec4899",
+    "#06b6d4",
+  ];
+
   // 판매처 목록이 있으면 사용, 없으면 기본 데이터의 키 추출
-  const displayMalls = malls.length > 0 ? malls : (data.length > 0 ? Object.keys(data[0]).filter(k => k !== 'x' && k !== 'date') : []);
-  
+  const displayMalls =
+    malls.length > 0
+      ? malls
+      : data.length > 0
+        ? Object.keys(data[0]).filter((k) => k !== "x" && k !== "date")
+        : [];
+
   return (
     <div className="h-[260px]">
       <div className="mb-2 text-sm text-slate-500">
-        표시 기준: {label} · 값: {malls.length > 0 ? '판매처별 최저가' : '채널별 대표 판매가(예시)'}
+        표시 기준: {label} · 값:{" "}
+        {malls.length > 0 ? "판매처별 최저가" : "채널별 대표 판매가(예시)"}
       </div>
       <ResponsiveContainer width="100%" height={height}>
         <LineChart
@@ -1164,26 +1188,28 @@ function PriceTrend({ mode, data, malls = [], height = 240 }) {
                     {label}
                   </div>
                   <div className="space-y-1">
-                    {payload.filter(p => p.value != null).map((entry, index) => (
-                      <div
-                        key={index}
-                        className="flex items-center justify-between gap-4 text-sm"
-                      >
-                        <div className="flex items-center gap-2">
-                          <div
-                            style={{
-                              width: "12px",
-                              height: "2px",
-                              backgroundColor: entry.color,
-                            }}
-                          />
-                          <span className="text-slate-600">{entry.name}</span>
+                    {payload
+                      .filter((p) => p.value != null)
+                      .map((entry, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center justify-between gap-4 text-sm"
+                        >
+                          <div className="flex items-center gap-2">
+                            <div
+                              style={{
+                                width: "12px",
+                                height: "2px",
+                                backgroundColor: entry.color,
+                              }}
+                            />
+                            <span className="text-slate-600">{entry.name}</span>
+                          </div>
+                          <span className="font-semibold text-slate-900">
+                            {formatKRW(Number(entry.value))}
+                          </span>
                         </div>
-                        <span className="font-semibold text-slate-900">
-                          {formatKRW(Number(entry.value))}
-                        </span>
-                      </div>
-                    ))}
+                      ))}
                   </div>
                 </div>
               );
@@ -1419,7 +1445,7 @@ function SingleSellerPriceTrend({ mode, timeline, sellerName, height = 240 }) {
         const date = new Date(item.capturedAt);
         const dateKey = `${String(date.getMonth() + 1).padStart(
           2,
-          "0"
+          "0",
         )}/${String(date.getDate()).padStart(2, "0")}`;
 
         if (!dailyMap[dateKey]) {
@@ -1443,7 +1469,7 @@ function SingleSellerPriceTrend({ mode, timeline, sellerName, height = 240 }) {
         x: dateKey,
         price: Math.round(
           dailyMap[dateKey].reduce((a, b) => a + b, 0) /
-            dailyMap[dateKey].length
+            dailyMap[dateKey].length,
         ),
       }));
     } else {
@@ -1467,7 +1493,7 @@ function SingleSellerPriceTrend({ mode, timeline, sellerName, height = 240 }) {
           x: monthKey,
           price: Math.round(
             monthlyMap[monthKey].reduce((a, b) => a + b, 0) /
-              monthlyMap[monthKey].length
+              monthlyMap[monthKey].length,
           ),
         }));
     }
@@ -1510,7 +1536,7 @@ function SingleSellerPriceTrend({ mode, timeline, sellerName, height = 240 }) {
     // 1000원 단위로 ticks 생성
     const tickStep = Math.max(
       1000,
-      Math.ceil((yMax - yMin) / 10 / 1000) * 1000
+      Math.ceil((yMax - yMin) / 10 / 1000) * 1000,
     );
     const ticks = [];
     for (let i = yMin; i <= yMax; i += tickStep) {
@@ -1662,8 +1688,8 @@ function SettingsPanel({ settings, onChange }) {
                 typeof threshold === "string"
                   ? threshold
                   : threshold === 0
-                  ? ""
-                  : String(threshold)
+                    ? ""
+                    : String(threshold)
               }
               onChange={(e) => {
                 const input = e.target.value;
@@ -1707,7 +1733,6 @@ function SettingsPanel({ settings, onChange }) {
             예: 프리스타일 리브레 2
           </div>
         </div>
-
       </div>
     </Card>
   );
@@ -1827,7 +1852,10 @@ function MainDashboard({
           ? safeSettings.threshold
           : Infinity;
         const diff = thr - r.unitPrice;
-        const needsCheck = r.calcMethod === "확인필요" || r.calcMethod === "가격역산(보정)" || r.calcMethod === "텍스트분석(범위초과)";
+        const needsCheck =
+          r.calcMethod === "확인필요" ||
+          r.calcMethod === "가격역산(보정)" ||
+          r.calcMethod === "텍스트분석(범위초과)";
         return (
           <div className="space-y-1">
             <div className="font-semibold">{formatKRW(r.unitPrice)}</div>
@@ -1835,7 +1863,11 @@ function MainDashboard({
               <div className="text-xs">
                 <Badge tone="warning">⚠ 수동확인</Badge>
                 <span className="ml-1 text-amber-600 text-[10px]">
-                  {r.calcMethod === "가격역산(보정)" ? "수량추정" : r.calcMethod === "텍스트분석(범위초과)" ? "범위초과" : "확인필요"}
+                  {r.calcMethod === "가격역산(보정)"
+                    ? "수량추정"
+                    : r.calcMethod === "텍스트분석(범위초과)"
+                      ? "범위초과"
+                      : "확인필요"}
                 </span>
               </div>
             )}
@@ -1931,7 +1963,11 @@ function MainDashboard({
                   onClick={() => c.active && onGoChannel(c.key)}
                 >
                   {c.label} 주요 셀러 보기
-                  {!c.active && <span className="ml-1 text-xs text-slate-400">(준비중)</span>}
+                  {!c.active && (
+                    <span className="ml-1 text-xs text-slate-400">
+                      (준비중)
+                    </span>
+                  )}
                 </Chip>
               ))}
             </div>
@@ -1940,7 +1976,10 @@ function MainDashboard({
       </div>
 
       <div className="grid grid-cols-12 gap-4">
-        <div className="col-span-12 md:col-span-3 cursor-pointer" onClick={() => setChannelFilter("all")}>
+        <div
+          className="col-span-12 md:col-span-3 cursor-pointer"
+          onClick={() => setChannelFilter("all")}
+        >
           <Stat
             label="기준가 이하(전체)"
             value={`${stats.belowTotal}곳`}
@@ -1948,14 +1987,35 @@ function MainDashboard({
             highlight={channelFilter === "all"}
           />
         </div>
-        <div className="col-span-12 md:col-span-3 cursor-pointer" onClick={() => setChannelFilter("naver")}>
-          <Stat label="네이버" value={`${stats.belowNaver}곳`} highlight={channelFilter === "naver"} />
+        <div
+          className="col-span-12 md:col-span-3 cursor-pointer"
+          onClick={() => setChannelFilter("naver")}
+        >
+          <Stat
+            label="네이버"
+            value={`${stats.belowNaver}곳`}
+            highlight={channelFilter === "naver"}
+          />
         </div>
-        <div className="col-span-12 md:col-span-3 cursor-pointer" onClick={() => setChannelFilter("coupang")}>
-          <Stat label="쿠팡" value={`${stats.belowCoupang}곳`} highlight={channelFilter === "coupang"} />
+        <div
+          className="col-span-12 md:col-span-3 cursor-pointer"
+          onClick={() => setChannelFilter("coupang")}
+        >
+          <Stat
+            label="쿠팡"
+            value={`${stats.belowCoupang}곳`}
+            highlight={channelFilter === "coupang"}
+          />
         </div>
-        <div className="col-span-12 md:col-span-3 cursor-pointer" onClick={() => setChannelFilter("others")}>
-          <Stat label="기타" value={`${stats.belowOthers}곳`} highlight={channelFilter === "others"} />
+        <div
+          className="col-span-12 md:col-span-3 cursor-pointer"
+          onClick={() => setChannelFilter("others")}
+        >
+          <Stat
+            label="기타"
+            value={`${stats.belowOthers}곳`}
+            highlight={channelFilter === "others"}
+          />
         </div>
       </div>
 
@@ -1976,7 +2036,15 @@ function MainDashboard({
   );
 }
 
-function ChannelSellers({ channelKey, settings, onBack, onSelectSeller, mallsSummary, mallsTrends, offers = [] }) {
+function ChannelSellers({
+  channelKey,
+  settings,
+  onBack,
+  onSelectSeller,
+  mallsSummary,
+  mallsTrends,
+  offers = [],
+}) {
   const [mode, setMode] = useState("daily");
   const [marketFilter, setMarketFilter] = useState("all");
 
@@ -1984,7 +2052,7 @@ function ChannelSellers({ channelKey, settings, onBack, onSelectSeller, mallsSum
   const sellers = useMemo(() => {
     // 네이버: tracked-malls summary API 데이터 사용
     if (channelKey === "naver" && mallsSummary?.data?.length > 0) {
-      return mallsSummary.data.map(mall => ({
+      return mallsSummary.data.map((mall) => ({
         seller: mall.mall_name,
         currentConsideredUnitPrice: mall.current_price,
         last7dRange: mall.change_7d || 0,
@@ -1995,12 +2063,12 @@ function ChannelSellers({ channelKey, settings, onBack, onSelectSeller, mallsSum
     }
 
     // 쿠팡/기타: offers에서 해당 채널의 판매처를 동적 추출
-    const channelOffers = offers.filter(o => o.channel === channelKey);
+    const channelOffers = offers.filter((o) => o.channel === channelKey);
     if (channelOffers.length > 0) {
       const sellerMap = new Map();
       const threshold = Number(settings.threshold) || Infinity;
 
-      channelOffers.forEach(o => {
+      channelOffers.forEach((o) => {
         const name = (o.seller || "").trim();
         if (!name || name === "-") return;
         if (!sellerMap.has(name)) {
@@ -2011,18 +2079,22 @@ function ChannelSellers({ channelKey, settings, onBack, onSelectSeller, mallsSum
         if (o.unitPrice <= threshold) entry.belowCount++;
       });
 
-      return Array.from(sellerMap.entries()).map(([name, data]) => {
-        const prices = data.prices.filter(p => p > 0);
-        const currentPrice = prices[prices.length - 1] || 0;
-        const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
-        const maxPrice = prices.length > 0 ? Math.max(...prices) : 0;
-        return {
-          seller: name,
-          currentConsideredUnitPrice: currentPrice,
-          last7dRange: maxPrice - minPrice,
-          belowCount: data.belowCount,
-        };
-      }).sort((a, b) => a.currentConsideredUnitPrice - b.currentConsideredUnitPrice);
+      return Array.from(sellerMap.entries())
+        .map(([name, data]) => {
+          const prices = data.prices.filter((p) => p > 0);
+          const currentPrice = prices[prices.length - 1] || 0;
+          const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
+          const maxPrice = prices.length > 0 ? Math.max(...prices) : 0;
+          return {
+            seller: name,
+            currentConsideredUnitPrice: currentPrice,
+            last7dRange: maxPrice - minPrice,
+            belowCount: data.belowCount,
+          };
+        })
+        .sort(
+          (a, b) => a.currentConsideredUnitPrice - b.currentConsideredUnitPrice,
+        );
     }
 
     return SAMPLE_SELLERS[channelKey] ?? [];
@@ -2096,7 +2168,7 @@ function ChannelSellers({ channelKey, settings, onBack, onSelectSeller, mallsSum
               <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
                 기준가 이하:{" "}
                 <span className="font-semibold">
-                  {mallsSummary?.target_price 
+                  {mallsSummary?.target_price
                     ? formatKRW(mallsSummary.target_price)
                     : settings.threshold === ""
                       ? "-"
@@ -2112,7 +2184,7 @@ function ChannelSellers({ channelKey, settings, onBack, onSelectSeller, mallsSum
             {channelKey === "naver" && mallsTrends?.data?.length > 0 ? (
               <PriceTrend
                 mode={mode}
-                data={mallsTrends.data.map(item => ({
+                data={mallsTrends.data.map((item) => ({
                   ...item,
                   x: item.x || item.date,
                 }))}
@@ -2227,7 +2299,10 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
   const rows = filteredTimeline
     .slice()
     .sort((a, b) => (a.capturedAt > b.capturedAt ? -1 : 1))
-    .map((t, idx) => ({ ...t, __rowKey: `${channelKey}-${sellerName}-${idx}` }));
+    .map((t, idx) => ({
+      ...t,
+      __rowKey: `${channelKey}-${sellerName}-${idx}`,
+    }));
 
   const columns = [
     { key: "capturedAt", header: "확인 시간" },
@@ -2250,7 +2325,10 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
             ? Infinity
             : Number(settings.threshold) || Infinity;
         const diff = thr - r.unitPrice;
-        const needsCheck = r.calcMethod === "확인필요" || r.calcMethod === "가격역산(보정)" || r.calcMethod === "텍스트분석(범위초과)";
+        const needsCheck =
+          r.calcMethod === "확인필요" ||
+          r.calcMethod === "가격역산(보정)" ||
+          r.calcMethod === "텍스트분석(범위초과)";
         return (
           <div className="space-y-1">
             <div className="font-semibold">{formatKRW(r.unitPrice)}</div>
@@ -2258,7 +2336,11 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
               <div className="text-xs">
                 <Badge tone="warning">⚠ 수동확인</Badge>
                 <span className="ml-1 text-amber-600 text-[10px]">
-                  {r.calcMethod === "가격역산(보정)" ? "수량추정" : r.calcMethod === "텍스트분석(범위초과)" ? "범위초과" : "확인필요"}
+                  {r.calcMethod === "가격역산(보정)"
+                    ? "수량추정"
+                    : r.calcMethod === "텍스트분석(범위초과)"
+                      ? "범위초과"
+                      : "확인필요"}
                 </span>
               </div>
             )}
@@ -2420,10 +2502,18 @@ export default function App() {
   const [productsData, setProductsData] = useState({
     snapshot_time: null,
     count: 0,
-    data: []
+    data: [],
   });
-  const [mallsSummary, setMallsSummary] = useState({ target_price: 90000, tracked_malls: [], data: [] });
-  const [mallsTrends, setMallsTrends] = useState({ days: 7, malls: [], data: [] });
+  const [mallsSummary, setMallsSummary] = useState({
+    target_price: 90000,
+    tracked_malls: [],
+    data: [],
+  });
+  const [mallsTrends, setMallsTrends] = useState({
+    days: 7,
+    malls: [],
+    data: [],
+  });
   const [mallsTop, setMallsTop] = useState({ count: 0, data: [] });
   const [loading, setLoading] = useState(true);
 
@@ -2431,18 +2521,18 @@ export default function App() {
   useEffect(() => {
     async function loadData() {
       setLoading(true);
-      
+
       // config 먼저 로드해서 기준가 설정
       const config = await fetchConfig();
       if (config.target_price) {
-        setSettings(prev => ({ ...prev, threshold: config.target_price }));
+        setSettings((prev) => ({ ...prev, threshold: config.target_price }));
       }
-      
+
       const [products, summary, trends, top] = await Promise.all([
         fetchLatestProducts(),
         fetchTrackedMallsSummary(),
         fetchTrackedMallsTrends(90),
-        fetchMallsTop(10)
+        fetchMallsTop(10),
       ]);
       setProductsData(products);
       setMallsSummary(summary);
@@ -2459,14 +2549,14 @@ export default function App() {
     if (mallsTrends.data && mallsTrends.data.length > 0) {
       const mallNames = mallsTrends.malls || [];
       // API 데이터를 그래프 형식으로 변환
-      const daily = mallsTrends.data.map(item => {
+      const daily = mallsTrends.data.map((item) => {
         const dateKey = item.x || item.date;
         return { x: dateKey, ...item };
       });
 
       // 일별 데이터에서 월별 데이터 자동 집계 (월별 최저가)
       const monthlyMap = {};
-      daily.forEach(item => {
+      daily.forEach((item) => {
         // x 형식: "02/05" 또는 "2026-02-05"
         let monthKey;
         if (item.x && item.x.includes("/")) {
@@ -2477,14 +2567,17 @@ export default function App() {
         } else {
           return;
         }
-        
+
         if (!monthlyMap[monthKey]) {
           monthlyMap[monthKey] = {};
         }
-        
-        mallNames.forEach(mall => {
+
+        mallNames.forEach((mall) => {
           if (item[mall] != null) {
-            if (!monthlyMap[monthKey][mall] || item[mall] < monthlyMap[monthKey][mall]) {
+            if (
+              !monthlyMap[monthKey][mall] ||
+              item[mall] < monthlyMap[monthKey][mall]
+            ) {
               monthlyMap[monthKey][mall] = item[mall]; // 월별 최저가
             }
           }
@@ -2493,14 +2586,18 @@ export default function App() {
 
       const monthly = Object.keys(monthlyMap)
         .sort((a, b) => parseInt(a) - parseInt(b))
-        .map(monthKey => ({
+        .map((monthKey) => ({
           x: monthKey,
           ...monthlyMap[monthKey],
         }));
 
       return { daily, monthly, malls: mallNames };
     }
-    return { daily: SAMPLE_DAILY_POINTS, monthly: SAMPLE_MONTHLY_POINTS, malls: [] };
+    return {
+      daily: SAMPLE_DAILY_POINTS,
+      monthly: SAMPLE_MONTHLY_POINTS,
+      malls: [],
+    };
   }, [mallsTrends]);
 
   // 백엔드 데이터를 프론트엔드 형식으로 변환
@@ -2508,22 +2605,27 @@ export default function App() {
     if (!productsData.data || productsData.data.length === 0) {
       return [];
     }
-    
+
     return productsData.data.map((item, index) => {
       // mall_name 기반 채널 자동 분류 (백엔드가 모든 상품에 channel: "naver"를 붙이므로)
       const mallName = (item.mall_name || "").trim();
       let channel = "naver";
       if (mallName === "쿠팡" || (item.link || "").includes("coupang")) {
         channel = "coupang";
-      } else if (["11번가", "G마켓", "옥션", "롯데몰"].includes(mallName) || 
-                 (item.link || "").includes("gmarket") || 
-                 (item.link || "").includes("auction") || 
-                 (item.link || "").includes("11st")) {
+      } else if (
+        ["11번가", "G마켓", "옥션", "롯데몰"].includes(mallName) ||
+        (item.link || "").includes("gmarket") ||
+        (item.link || "").includes("auction") ||
+        (item.link || "").includes("11st")
+      ) {
         channel = "others";
       }
-      const market = mallName === "쿠팡" ? "쿠팡" : 
-                     ["11번가", "G마켓", "옥션"].includes(mallName) ? mallName :
-                     item.market || "스마트스토어";
+      const market =
+        mallName === "쿠팡"
+          ? "쿠팡"
+          : ["11번가", "G마켓", "옥션"].includes(mallName)
+            ? mallName
+            : item.market || "스마트스토어";
 
       return {
         id: `o${index + 1}`,
@@ -2536,13 +2638,13 @@ export default function App() {
         unitPrice: item.unit_price,
         calcMethod: item.calc_method || "텍스트분석",
         url: item.link || "#",
-        capturedAt: productsData.snapshot_time 
-          ? new Date(productsData.snapshot_time).toLocaleString('ko-KR', {
-              year: 'numeric',
-              month: '2-digit',
-              day: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit'
+        capturedAt: productsData.snapshot_time
+          ? new Date(productsData.snapshot_time).toLocaleString("ko-KR", {
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
             })
           : "-",
         captureThumb: item.image_url || "/placeholder.png",
@@ -2593,6 +2695,12 @@ export default function App() {
               {c.label}
             </Chip>
           ))}
+          <Link
+            to="/report"
+            className="rounded-xl px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+          >
+            LLM-Report
+          </Link>
         </div>
       </div>
     </div>
@@ -2611,59 +2719,69 @@ export default function App() {
     <div className="min-h-screen bg-slate-50">
       {header}
       <main className="mx-auto max-w-6xl px-4 py-6">
-        {route.page === "main" && (
-          <MainDashboard
-            settings={settings}
-            safeSettings={safeSettings}
-            onChangeSettings={setSettings}
-            onGoChannel={(channelKey) =>
-              setRoute({ page: "channel", channelKey, sellerName: "" })
-            }
-            data={data}
-            offers={offers}
-            mallsSummary={mallsSummary}
-            mallsTop={mallsTop}
-          />
-        )}
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <>
+                {route.page === "main" && (
+                  <MainDashboard
+                    settings={settings}
+                    safeSettings={safeSettings}
+                    onChangeSettings={setSettings}
+                    onGoChannel={(channelKey) =>
+                      setRoute({ page: "channel", channelKey, sellerName: "" })
+                    }
+                    data={data}
+                    offers={offers}
+                    mallsSummary={mallsSummary}
+                    mallsTop={mallsTop}
+                  />
+                )}
 
-        {route.page === "channel" && (
-          <ChannelSellers
-            channelKey={route.channelKey}
-            settings={safeSettings}
-            onBack={() =>
-              setRoute({
-                page: "main",
-                channelKey: route.channelKey,
-                sellerName: "",
-              })
-            }
-            onSelectSeller={(sellerName) =>
-              setRoute({
-                page: "seller",
-                channelKey: route.channelKey,
-                sellerName,
-              })
-            }
-            mallsSummary={mallsSummary}
-            mallsTrends={mallsTrends}
-            offers={offers}
-          />
-        )}
+                {route.page === "channel" && (
+                  <ChannelSellers
+                    channelKey={route.channelKey}
+                    settings={safeSettings}
+                    onBack={() =>
+                      setRoute({
+                        page: "main",
+                        channelKey: route.channelKey,
+                        sellerName: "",
+                      })
+                    }
+                    onSelectSeller={(sellerName) =>
+                      setRoute({
+                        page: "seller",
+                        channelKey: route.channelKey,
+                        sellerName,
+                      })
+                    }
+                    mallsSummary={mallsSummary}
+                    mallsTrends={mallsTrends}
+                    offers={offers}
+                  />
+                )}
 
-        {route.page === "seller" && (
-          <SellerDetail
-            channelKey={route.channelKey}
-            sellerName={route.sellerName}
-            settings={safeSettings}
-            onBackToChannel={() =>
-              setRoute({
-                page: "channel",
-                channelKey: route.channelKey,
-                sellerName: "",
-              })
+                {route.page === "seller" && (
+                  <SellerDetail
+                    channelKey={route.channelKey}
+                    sellerName={route.sellerName}
+                    settings={safeSettings}
+                    onBackToChannel={() =>
+                      setRoute({
+                        page: "channel",
+                        channelKey: route.channelKey,
+                        sellerName: "",
+                      })
+                    }
+                  />
+                )}
+              </>
             }
           />
-        )}
+          <Route path="/report" element={<Report />} />
+        </Routes>
       </main>
       {footer}
     </div>
