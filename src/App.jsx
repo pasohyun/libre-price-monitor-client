@@ -2699,7 +2699,13 @@ export default function App() {
             to="/report"
             className="rounded-xl px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-slate-300"
           >
-            LLM-Report
+            Monthly LLM Report
+          </Link>
+          <Link
+            to="/tracked-report"
+            className="rounded-xl px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+          >
+            Tracked Malls Report
           </Link>
         </div>
       </div>
@@ -2780,7 +2786,8 @@ export default function App() {
               </>
             }
           />
-          <Route path="/report" element={<Report />} />
+          <Route path="/report" element={<MonthlyReportPage />} />
+          <Route path="/tracked-report" element={<Report />} />
         </Routes>
       </main>
       {footer}
