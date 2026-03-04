@@ -2786,7 +2786,8 @@ export default function App() {
               </>
             }
           />
-          <Route path="/report" element={<Report />} />
+          <Route path="/report" element={<MonthlyReportPage />} />
+          <Route path="/tracked-report" element={<Report />} />
         </Routes>
       </main>
       {footer}
