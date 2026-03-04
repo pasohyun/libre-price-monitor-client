@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect } from "react";
 import "./App.css";
 import Report from "./Report.jsx";
 import { Routes, Route, Link } from "react-router-dom";
+import MonthlyReportPage from "./pages/MonthlyReportPage";
 
 import {
   LineChart,
