@@ -4,7 +4,7 @@ import { API_BASE_URL } from "../config/api";
 export type MonthlyReportParams = {
   month: string; // "YYYY-MM"
   threshold_price: number; // 85000
-  channel: string; // "naver" | "coupang" ...
+  channel: "naver" | "coupang" | "all";
   crawl_schedule?: string; // "00/12"
   top_cards?: number; // 10
   use_llm?: boolean; // true/false
