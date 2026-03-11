@@ -34,6 +34,7 @@ import {
 // -----------------------------
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const MEDICAL_DEVICE_BASE_URL = "https://2d.daewoong.co.kr/frame/index.do";
 
 async function fetchLatestProducts() {
   try {
@@ -2640,6 +2641,18 @@ export default function App() {
     timezone: "Asia/Seoul",
   });
 
+  const handleOpenMedicalDeviceSite = () => {
+    const serial = window.prompt(
+      "시리얼 번호를 입력하세요.\n(취소/빈값이면 메인 페이지로 이동)",
+      "",
+    );
+    const trimmed = (serial || "").trim();
+    const url = trimmed
+      ? `${MEDICAL_DEVICE_BASE_URL}?serialNumber=${encodeURIComponent(trimmed)}`
+      : MEDICAL_DEVICE_BASE_URL;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
   // API 데이터 로드
   useEffect(() => {
     async function loadData() {
@@ -2825,6 +2838,13 @@ export default function App() {
           </div>
         </div>
         <div className="hidden md:flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleOpenMedicalDeviceSite}
+            className="rounded-xl px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+          >
+            의료기기 링크(시리얼 입력)
+          </button>
           {CHANNELS.map((c) => (
             <Chip
               key={c.key}
