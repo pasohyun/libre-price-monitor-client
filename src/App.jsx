@@ -992,6 +992,13 @@ const formatKRW = (n) => {
 
 const parseDateLike = (v) => {
   if (!v) return null;
+  if (v instanceof Date) {
+    return Number.isNaN(v.getTime()) ? null : v;
+  }
+  if (typeof v === "number") {
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
   const s = String(v).trim();
   if (!s) return null;
   const normalized = s.includes("T") ? s : s.replace(" ", "T");
