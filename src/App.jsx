@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import "./App.css";
 import Report from "./Report.jsx";
-import { Routes, Route, Link } from "react-router-dom";
+import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import MonthlyReportPage from "./pages/MonthlyReportPage";
 
 import {
@@ -1189,6 +1189,22 @@ function GhostButton({ children, onClick }) {
       type="button"
       onClick={onClick}
       className="rounded-xl px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+    >
+      {children}
+    </button>
+  );
+}
+
+function HeaderNavButton({ active = false, children, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-xl px-4 py-2 text-sm font-semibold border transition ${
+        active
+          ? "border-slate-900 bg-slate-900 text-white"
+          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+      }`}
     >
       {children}
     </button>
@@ -2638,6 +2654,9 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
 // -----------------------------
 
 export default function App() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
   // 간단 라우팅: "main" | "channel" | "seller"
   const [route, setRoute] = useState({
     page: "main",
@@ -2694,6 +2713,16 @@ export default function App() {
     window.open(url, "_blank", "noopener,noreferrer");
     setMedicalModalOpen(false);
     setMedicalSerialInput("");
+  };
+
+  const goMainDashboard = () => {
+    setRoute((prev) => ({ ...prev, page: "main", sellerName: "" }));
+    navigate("/");
+  };
+
+  const goChannelPage = (channelKey) => {
+    setRoute({ page: "channel", channelKey, sellerName: "" });
+    navigate("/");
   };
 
   // API 데이터 로드
@@ -2881,36 +2910,42 @@ export default function App() {
           </div>
         </div>
         <div className="hidden md:flex items-center gap-2">
-          <button
-            type="button"
+          <HeaderNavButton
+            active={location.pathname === "/" && route.page === "main"}
+            onClick={goMainDashboard}
+          >
+            메인으로
+          </HeaderNavButton>
+          <HeaderNavButton
             onClick={handleOpenMedicalDeviceSite}
-            className="rounded-xl px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-slate-300"
           >
             의료기기 링크(시리얼 입력)
-          </button>
+          </HeaderNavButton>
           {CHANNELS.map((c) => (
-            <Chip
+            <HeaderNavButton
               key={c.key}
-              active={route.page !== "main" && route.channelKey === c.key}
-              onClick={() =>
-                setRoute({ page: "channel", channelKey: c.key, sellerName: "" })
+              active={
+                location.pathname === "/" &&
+                route.page !== "main" &&
+                route.channelKey === c.key
               }
+              onClick={() => goChannelPage(c.key)}
             >
               {c.label}
-            </Chip>
+            </HeaderNavButton>
           ))}
-          <Link
-            to="/report"
-            className="rounded-xl px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+          <HeaderNavButton
+            active={location.pathname === "/report"}
+            onClick={() => navigate("/report")}
           >
             Monthly LLM Report
-          </Link>
-          <Link
-            to="/tracked-report"
-            className="rounded-xl px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+          </HeaderNavButton>
+          <HeaderNavButton
+            active={location.pathname === "/tracked-report"}
+            onClick={() => navigate("/tracked-report")}
           >
             Tracked Malls Report
-          </Link>
+          </HeaderNavButton>
         </div>
       </div>
     </div>
