@@ -20,6 +20,11 @@ const formatKRW = (n) =>
     ? n.toLocaleString("ko-KR") + "원"
     : "-";
 
+const normalizeMallName = (name) => {
+  const v = String(name || "").trim();
+  return v === "네이버" ? "최저가비교" : v || "-";
+};
+
 function Table({ columns, rows, emptyText = "데이터가 없습니다." }) {
   return (
     <div className="overflow-x-auto rounded-2xl border border-slate-200">
@@ -139,7 +144,11 @@ export default function Report() {
           <Card title="Tracked Malls Summary">
             <Table
               columns={[
-                { key: "mall_name", header: "몰" },
+                {
+                  key: "mall_name",
+                  header: "몰",
+                  render: (r) => normalizeMallName(r.mall_name),
+                },
                 {
                   key: "current_price",
                   header: "현재가",
@@ -167,7 +176,11 @@ export default function Report() {
           <Card title="Top Malls">
             <Table
               columns={[
-                { key: "mall_name", header: "몰" },
+                {
+                  key: "mall_name",
+                  header: "몰",
+                  render: (r) => normalizeMallName(r.mall_name),
+                },
                 {
                   key: "min_price",
                   header: "최저가",

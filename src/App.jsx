@@ -1065,6 +1065,11 @@ const clampNumber = (v, min, max) => {
 };
 
 const channelLabel = (key) => CHANNELS.find((c) => c.key === key)?.label ?? key;
+const displaySellerName = (channel, sellerName) => {
+  const name = String(sellerName || "").trim();
+  if (channel === "naver" && name === "네이버") return "최저가비교";
+  return name || "알 수 없음";
+};
 
 // -----------------------------
 // UI Primitives (no external UI lib)
@@ -2000,7 +2005,11 @@ function MainDashboard({
         <span className="font-medium">{channelLabel(r.channel)}</span>
       ),
     },
-    { key: "seller", header: "판매처" },
+    {
+      key: "seller",
+      header: "판매처",
+      render: (r) => displaySellerName(r.channel, r.seller),
+    },
     { key: "productName", header: "상품명" },
     {
       key: "price",
@@ -2386,7 +2395,7 @@ function ChannelSellers({
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-300">
               <div className="text-sm text-slate-500">판매처</div>
               <div className="mt-1 text-lg font-semibold text-slate-900">
-                {s.seller}
+                {displaySellerName(channelKey, s.seller)}
               </div>
 
               <div className="mt-3 space-y-1 text-sm">
@@ -2579,7 +2588,7 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
         <div>
           <div className="text-sm text-slate-500">세부데이터</div>
           <div className="text-2xl font-semibold text-slate-900">
-            {channelLabel(channelKey)} · {sellerName}
+            {channelLabel(channelKey)} · {displaySellerName(channelKey, sellerName)}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -2597,7 +2606,9 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">판매처</span>
-                <span className="font-medium">{sellerName}</span>
+                <span className="font-medium">
+                  {displaySellerName(channelKey, sellerName)}
+                </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">평균 단가</span>
