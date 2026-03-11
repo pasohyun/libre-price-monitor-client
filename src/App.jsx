@@ -990,6 +990,30 @@ const formatKRW = (n) => {
   return n.toLocaleString("ko-KR") + "원";
 };
 
+const parseDateLike = (v) => {
+  if (!v) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+  const normalized = s.includes("T") ? s : s.replace(" ", "T");
+  const d = new Date(normalized);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+};
+
+const formatDateTimeKST = (v) => {
+  const d = parseDateLike(v);
+  if (!d) return "-";
+  return d.toLocaleString("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+};
+
 const clampNumber = (v, min, max) => {
   const n = Number(v);
   if (Number.isNaN(n)) return min;
@@ -1443,7 +1467,8 @@ function SingleSellerPriceTrend({ mode, timeline, sellerName, height = 240 }) {
       // 일별 데이터: capturedAt을 날짜별로 그룹화하고 평균 계산
       const dailyMap = {};
       timeline.forEach((item) => {
-        const date = new Date(item.capturedAt);
+        const date = parseDateLike(item.capturedAt);
+        if (!date) return;
         const dateKey = `${String(date.getMonth() + 1).padStart(
           2,
           "0",
@@ -1477,7 +1502,8 @@ function SingleSellerPriceTrend({ mode, timeline, sellerName, height = 240 }) {
       // 월별 데이터: capturedAt을 월별로 그룹화하고 평균 계산
       const monthlyMap = {};
       timeline.forEach((item) => {
-        const date = new Date(item.capturedAt);
+        const date = parseDateLike(item.capturedAt);
+        if (!date) return;
         const monthKey = `${date.getMonth() + 1}월`;
 
         if (!monthlyMap[monthKey]) {
@@ -1810,10 +1836,13 @@ function MainDashboard({
       globalMin = Math.min(globalMin, o.unitPrice);
     }
 
-    const lastCollected = offers
-      .map((o) => o.capturedAt)
-      .sort()
-      .slice(-1)[0];
+    const lastCollectedMs = offers.reduce(
+      (max, o) =>
+        typeof o.capturedAtMs === "number" && o.capturedAtMs > max
+          ? o.capturedAtMs
+          : max,
+      -1,
+    );
 
     return {
       belowTotal: byChannel.naver + byChannel.coupang + byChannel.others,
@@ -1821,7 +1850,8 @@ function MainDashboard({
       belowCoupang: byChannel.coupang,
       belowOthers: byChannel.others,
       minUnitPrice: globalMin === Infinity ? null : globalMin,
-      lastCollected: lastCollected || "-",
+      lastCollected:
+        lastCollectedMs > 0 ? formatDateTimeKST(lastCollectedMs) : "-",
     };
   }, [offers, safeSettings.threshold]);
 
@@ -2299,9 +2329,14 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
 
   const rows = filteredTimeline
     .slice()
-    .sort((a, b) => (a.capturedAt > b.capturedAt ? -1 : 1))
+    .sort((a, b) => {
+      const aMs = parseDateLike(a.capturedAt)?.getTime() ?? 0;
+      const bMs = parseDateLike(b.capturedAt)?.getTime() ?? 0;
+      return bMs - aMs;
+    })
     .map((t, idx) => ({
       ...t,
+      capturedAt: formatDateTimeKST(t.capturedAt),
       __rowKey: `${channelKey}-${sellerName}-${idx}`,
     }));
 
@@ -2639,15 +2674,8 @@ export default function App() {
         unitPrice: item.unit_price,
         calcMethod: item.calc_method || "텍스트분석",
         url: item.link || "#",
-        capturedAt: productsData.snapshot_time
-          ? new Date(productsData.snapshot_time).toLocaleString("ko-KR", {
-              year: "numeric",
-              month: "2-digit",
-              day: "2-digit",
-              hour: "2-digit",
-              minute: "2-digit",
-            })
-          : "-",
+        capturedAt: formatDateTimeKST(productsData.snapshot_time),
+        capturedAtMs: parseDateLike(productsData.snapshot_time)?.getTime() ?? 0,
         captureThumb: item.image_url || "/placeholder.png",
       };
     });
