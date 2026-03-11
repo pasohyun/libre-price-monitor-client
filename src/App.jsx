@@ -97,6 +97,36 @@ async function fetchMallsTop(limit = 10) {
   }
 }
 
+async function runCrawlNow() {
+  try {
+    const response = await fetch(`${API_BASE}/products/crawl/run`, {
+      method: "POST",
+    });
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    console.error("Failed to run crawl now:", error);
+    return { started: false, status: "error", message: String(error) };
+  }
+}
+
+async function fetchCrawlStatus() {
+  try {
+    const response = await fetch(`${API_BASE}/products/crawl/status`);
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    console.error("Failed to fetch crawl status:", error);
+    return {
+      running: false,
+      last_started_at: null,
+      last_finished_at: null,
+      last_error: String(error),
+      timezone: "Asia/Seoul",
+    };
+  }
+}
+
 async function fetchMallTimeline(mallName, days = 30) {
   try {
     const response = await fetch(
@@ -1665,8 +1695,17 @@ function SingleSellerPriceTrend({ mode, timeline, sellerName, height = 240 }) {
 // Settings Panel
 // -----------------------------
 
-function SettingsPanel({ settings, onChange }) {
+function SettingsPanel({
+  settings,
+  onChange,
+  crawlStatus,
+  crawlActionLoading,
+  onRunCrawl,
+}) {
   const { minPrice, maxPrice, threshold, productName } = settings;
+  const running = !!crawlStatus?.running;
+  const lastStarted = formatDateTimeKST(crawlStatus?.last_started_at);
+  const lastFinished = formatDateTimeKST(crawlStatus?.last_finished_at);
 
   return (
     <Card title="설정" className="h-full">
@@ -1767,6 +1806,30 @@ function SettingsPanel({ settings, onChange }) {
             예: 프리스타일 리브레 2
           </div>
         </div>
+
+        <div className="border-t border-slate-200 pt-4">
+          <div className="text-sm font-medium text-slate-700">크롤링 실행</div>
+          <div className="mt-2">
+            <PrimaryButton
+              onClick={onRunCrawl}
+              disabled={running || crawlActionLoading}
+            >
+              {running
+                ? "크롤링 실행 중..."
+                : crawlActionLoading
+                  ? "요청 중..."
+                  : "지금 크롤링 실행"}
+            </PrimaryButton>
+          </div>
+          <div className="mt-2 text-xs text-slate-500">
+            최근 시작: {lastStarted} / 최근 종료: {lastFinished}
+          </div>
+          {crawlStatus?.last_error && (
+            <div className="mt-1 text-xs text-red-600">
+              최근 오류: {String(crawlStatus.last_error)}
+            </div>
+          )}
+        </div>
       </div>
     </Card>
   );
@@ -1808,6 +1871,9 @@ function MainDashboard({
   settings,
   safeSettings,
   onChangeSettings,
+  crawlStatus,
+  crawlActionLoading,
+  onRunCrawl,
   onGoChannel,
   data,
   offers,
@@ -1965,7 +2031,13 @@ function MainDashboard({
 
       <div className="grid grid-cols-12 gap-4">
         <div className="col-span-12 lg:col-span-4">
-          <SettingsPanel settings={settings} onChange={onChangeSettings} />
+          <SettingsPanel
+            settings={settings}
+            onChange={onChangeSettings}
+            crawlStatus={crawlStatus}
+            crawlActionLoading={crawlActionLoading}
+            onRunCrawl={onRunCrawl}
+          />
         </div>
 
         <div className="col-span-12 lg:col-span-8">
@@ -2559,6 +2631,14 @@ export default function App() {
   });
   const [mallsTop, setMallsTop] = useState({ count: 0, data: [] });
   const [loading, setLoading] = useState(true);
+  const [crawlActionLoading, setCrawlActionLoading] = useState(false);
+  const [crawlStatus, setCrawlStatus] = useState({
+    running: false,
+    last_started_at: null,
+    last_finished_at: null,
+    last_error: null,
+    timezone: "Asia/Seoul",
+  });
 
   // API 데이터 로드
   useEffect(() => {
@@ -2585,6 +2665,31 @@ export default function App() {
     }
     loadData();
   }, []);
+
+  useEffect(() => {
+    let timer = null;
+    const pollStatus = async () => {
+      const status = await fetchCrawlStatus();
+      setCrawlStatus(status);
+    };
+    pollStatus();
+    timer = setInterval(pollStatus, 10000);
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, []);
+
+  const handleRunCrawlNow = async () => {
+    if (crawlActionLoading || crawlStatus.running) return;
+    setCrawlActionLoading(true);
+    const result = await runCrawlNow();
+    if (result?.status === "started") {
+      setCrawlStatus((prev) => ({ ...prev, running: true, last_error: null }));
+    }
+    const latestStatus = await fetchCrawlStatus();
+    setCrawlStatus(latestStatus);
+    setCrawlActionLoading(false);
+  };
 
   // 판매처별 추이 데이터 변환 (그래프용)
   const data = useMemo(() => {
@@ -2771,6 +2876,9 @@ export default function App() {
                     settings={settings}
                     safeSettings={safeSettings}
                     onChangeSettings={setSettings}
+                    crawlStatus={crawlStatus}
+                    crawlActionLoading={crawlActionLoading}
+                    onRunCrawl={handleRunCrawlNow}
                     onGoChannel={(channelKey) =>
                       setRoute({ page: "channel", channelKey, sellerName: "" })
                     }
