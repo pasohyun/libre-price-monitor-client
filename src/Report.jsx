@@ -1,6 +1,5 @@
 // src/Report.jsx
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
@@ -75,7 +74,6 @@ function Card({ title, children }) {
 }
 
 export default function Report() {
-  const nav = useNavigate();
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState({
     target_price: 90000,
@@ -128,13 +126,6 @@ export default function Report() {
             Tracked Malls Report
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => nav("/")}
-          className="rounded-xl px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-        >
-          ← 대시보드
-        </button>
       </div>
 
       {loading ? (
