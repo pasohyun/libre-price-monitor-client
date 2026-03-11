@@ -151,6 +151,12 @@ const CHANNELS = [
   { key: "others", label: "기타(G마켓/옥션)", active: true },
 ];
 
+const HEADER_LABELS = {
+  naver: "네이버\n스토어",
+  coupang: "쿠팡",
+  others: "기타(G마켓/\n옥션)",
+};
+
 const MARKET_BY_CHANNEL = {
   naver: ["스마트스토어"],
   coupang: ["로켓배송", "마켓플레이스"],
@@ -1200,13 +1206,15 @@ function HeaderNavButton({ active = false, children, onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-xl px-4 py-2 text-sm font-semibold border transition ${
+      className={`h-14 min-w-[112px] rounded-xl border px-3 py-2 text-sm font-semibold leading-tight transition ${
         active
           ? "border-slate-900 bg-slate-900 text-white"
           : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
       }`}
     >
-      {children}
+      <span className="block text-center whitespace-pre-line break-words">
+        {children}
+      </span>
     </button>
   );
 }
@@ -2913,7 +2921,7 @@ export default function App() {
           <HeaderNavButton
             onClick={handleOpenMedicalDeviceSite}
           >
-            의료기기 링크(시리얼 입력)
+            {"의료기기 링크\n(시리얼 입력)"}
           </HeaderNavButton>
           {CHANNELS.map((c) => (
             <HeaderNavButton
@@ -2925,20 +2933,20 @@ export default function App() {
               }
               onClick={() => goChannelPage(c.key)}
             >
-              {c.label}
+              {HEADER_LABELS[c.key] || c.label}
             </HeaderNavButton>
           ))}
           <HeaderNavButton
             active={location.pathname === "/report"}
             onClick={() => navigate("/report")}
           >
-            Monthly LLM Report
+            {"Monthly LLM\nReport"}
           </HeaderNavButton>
           <HeaderNavButton
             active={location.pathname === "/tracked-report"}
             onClick={() => navigate("/tracked-report")}
           >
-            Tracked Malls Report
+            {"Tracked Malls\nReport"}
           </HeaderNavButton>
         </div>
       </div>
