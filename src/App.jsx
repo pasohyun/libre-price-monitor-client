@@ -2911,12 +2911,6 @@ export default function App() {
         </div>
         <div className="hidden md:flex items-center gap-2">
           <HeaderNavButton
-            active={location.pathname === "/" && route.page === "main"}
-            onClick={goMainDashboard}
-          >
-            메인으로
-          </HeaderNavButton>
-          <HeaderNavButton
             onClick={handleOpenMedicalDeviceSite}
           >
             의료기기 링크(시리얼 입력)
@@ -3038,8 +3032,28 @@ export default function App() {
               </>
             }
           />
-          <Route path="/report" element={<MonthlyReportPage />} />
-          <Route path="/tracked-report" element={<Report />} />
+          <Route
+            path="/report"
+            element={
+              <div className="space-y-3">
+                <div className="flex justify-end">
+                  <GhostButton onClick={goMainDashboard}>← 메인으로</GhostButton>
+                </div>
+                <MonthlyReportPage />
+              </div>
+            }
+          />
+          <Route
+            path="/tracked-report"
+            element={
+              <div className="space-y-3">
+                <div className="flex justify-end">
+                  <GhostButton onClick={goMainDashboard}>← 메인으로</GhostButton>
+                </div>
+                <Report />
+              </div>
+            }
+          />
         </Routes>
       </main>
       {footer}
