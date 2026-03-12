@@ -1965,7 +1965,7 @@ function HtmlCardModal({
             <div className="text-sm text-slate-600">판매처: {sellerName || "-"}</div>
             <div className="flex items-end gap-2">
               <span className="text-3xl font-extrabold text-slate-900">
-                {formatNumber(row.unitPrice || 0)}
+                {Number(row.unitPrice || 0).toLocaleString("ko-KR")}
               </span>
               <span className="pb-1 text-base font-semibold text-slate-500">원/개</span>
             </div>
