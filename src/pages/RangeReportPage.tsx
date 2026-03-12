@@ -1,5 +1,5 @@
 // src/pages/RangeReportPage.tsx
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import {
   LineChart,
   Line,
@@ -74,10 +74,6 @@ export default function RangeReportPage() {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<ReportData | null>(null);
 
-  const prettyJson = useMemo(
-    () => (data ? JSON.stringify(data, null, 2) : ""),
-    [data],
-  );
 
   const onFetch = async () => {
     setLoading(true);
@@ -208,14 +204,7 @@ export default function RangeReportPage() {
       )}
 
       {data && (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1.25fr 0.75fr",
-            gap: 16,
-          }}
-        >
-          {/* 왼쪽: 리포트 */}
+        <div>
           <div>
             {/* ① Summary */}
             <div style={sectionCard}>
@@ -574,33 +563,6 @@ export default function RangeReportPage() {
             </div>
           </div>
 
-          {/* 오른쪽: 원본 JSON */}
-          <div
-            style={{
-              border: "1px solid #e5e7eb",
-              borderRadius: 12,
-              padding: 16,
-              alignSelf: "start",
-              position: "sticky",
-              top: 16,
-            }}
-          >
-            <h3 style={{ marginTop: 0 }}>원본 JSON</h3>
-            <pre
-              style={{
-                fontSize: 12,
-                overflow: "auto",
-                maxHeight: 780,
-                margin: 0,
-                background: "#0b1020",
-                color: "#d1d5db",
-                padding: 12,
-                borderRadius: 12,
-              }}
-            >
-              {prettyJson}
-            </pre>
-          </div>
         </div>
       )}
     </div>
