@@ -2917,19 +2917,19 @@ export default function App() {
     <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/80 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
         <div className="flex items-center gap-3">
-          <Link to="/" className="flex items-center gap-3 no-underline" onClick={() => setRoute({ page: "main", channelKey: "", sellerName: "" })}>
+          <button type="button" className="flex items-center gap-3 cursor-pointer bg-transparent border-none p-0" onClick={() => { navigate("/"); setRoute({ page: "main", channelKey: "", sellerName: "" }); }}>
             <img
               src="/ADC_Logo_FSL2_YCH_reduced_RGB.png"
               alt="FreeStyle Libre 2"
               className="h-10 object-contain"
             />
-            <div>
+            <div className="text-left">
               <div className="text-sm text-slate-500">온라인 모니터링</div>
               <div className="font-semibold text-slate-900">
                 Libre2 Price Monitor
               </div>
             </div>
-          </Link>
+          </button>
         </div>
         <div className="hidden md:flex items-center gap-2">
           <HeaderNavButton
@@ -3048,9 +3048,6 @@ export default function App() {
               </>
             }
           />
-          <Route path="/report" element={<MonthlyReportPage />} />
-          <Route path="/range-report" element={<RangeReportPage />} />
-          <Route path="/tracked-report" element={<Report />} />
           <Route
             path="/report"
             element={
@@ -3059,6 +3056,17 @@ export default function App() {
                   <GhostButton onClick={goMainDashboard}>← 메인으로</GhostButton>
                 </div>
                 <MonthlyReportPage />
+              </div>
+            }
+          />
+          <Route
+            path="/range-report"
+            element={
+              <div className="space-y-3">
+                <div className="flex justify-end">
+                  <GhostButton onClick={goMainDashboard}>← 메인으로</GhostButton>
+                </div>
+                <RangeReportPage />
               </div>
             }
           />
