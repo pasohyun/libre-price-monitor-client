@@ -169,6 +169,29 @@ async function generateCardImageOnDemand(productId) {
   }
 }
 
+async function confirmManualQuantity(productId, quantity) {
+  try {
+    const response = await fetch(
+      `${API_BASE}/products/manual-confirm?product_id=${encodeURIComponent(productId)}&quantity=${encodeURIComponent(quantity)}`,
+      { method: "POST" },
+    );
+    if (!response.ok) {
+      let detail = `API error: ${response.status}`;
+      try {
+        const err = await response.json();
+        if (err?.detail) detail = String(err.detail);
+      } catch {
+        // ignore
+      }
+      throw new Error(detail);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error("Failed to confirm manual quantity:", error);
+    return { updated: false, message: String(error) };
+  }
+}
+
 // -----------------------------
 // Mock Data (일별/월별 데이터는 백엔드에 없으므로 유지)
 // -----------------------------
@@ -2054,6 +2077,53 @@ function MedicalSerialModal({
   );
 }
 
+function ManualQuantityModal({
+  open,
+  target,
+  quantityInput,
+  onChangeQuantity,
+  onClose,
+  onSubmit,
+  submitting = false,
+}) {
+  if (!open || !target) return null;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={onClose}
+    >
+      <div
+        className="w-[92vw] max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="text-lg font-semibold text-slate-900">수동 수량 확인</div>
+        <div className="mt-1 text-sm text-slate-600 line-clamp-2">
+          {target.productName || "-"}
+        </div>
+        <div className="mt-3 text-xs text-slate-500">
+          현재 수량: {target.pack || 0}개 / 판매가: {formatKRW(target.price || 0)}
+        </div>
+        <input
+          className="mt-4 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
+          placeholder="확정 수량 입력"
+          value={quantityInput}
+          onChange={(e) => {
+            const input = e.target.value;
+            if (input === "" || /^\d+$/.test(input)) onChangeQuantity(input);
+          }}
+          autoFocus
+        />
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <GhostButton onClick={onClose}>취소</GhostButton>
+          <PrimaryButton onClick={onSubmit} disabled={submitting || !quantityInput}>
+            {submitting ? "저장 중..." : "확정 저장"}
+          </PrimaryButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MainDashboard({
   settings,
   safeSettings,
@@ -2063,6 +2133,7 @@ function MainDashboard({
   onRunCrawl,
   onGoChannel,
   onGenerateImage,
+  onManualConfirm,
   data,
   offers,
   mallsSummary,
@@ -2071,6 +2142,10 @@ function MainDashboard({
   const [trendMode, setTrendMode] = useState("daily"); // daily/monthly
   const [previewHtmlCard, setPreviewHtmlCard] = useState(null);
   const [htmlGenerating, setHtmlGenerating] = useState(false);
+  const [manualModalOpen, setManualModalOpen] = useState(false);
+  const [manualTarget, setManualTarget] = useState(null);
+  const [manualQtyInput, setManualQtyInput] = useState("");
+  const [manualSubmitting, setManualSubmitting] = useState(false);
   const [channelFilter, setChannelFilter] = useState("all"); // all | naver | coupang | others
 
   const filteredOffers = useMemo(() => {
@@ -2166,6 +2241,17 @@ function MainDashboard({
                       ? "범위초과"
                       : "확인필요"}
                 </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setManualTarget(r);
+                    setManualQtyInput(String(r.pack || ""));
+                    setManualModalOpen(true);
+                  }}
+                  className="ml-2 rounded-md border border-amber-300 px-2 py-0.5 text-[10px] font-semibold text-amber-700 hover:bg-amber-50"
+                >
+                  수량확정
+                </button>
               </div>
             )}
             {Number.isFinite(diff) && diff >= 0 ? (
@@ -2212,6 +2298,37 @@ function MainDashboard({
 
   return (
     <div className="space-y-6">
+      <ManualQuantityModal
+        open={manualModalOpen}
+        target={manualTarget}
+        quantityInput={manualQtyInput}
+        onChangeQuantity={setManualQtyInput}
+        submitting={manualSubmitting}
+        onSubmit={async () => {
+          const qty = Number(manualQtyInput);
+          if (!Number.isFinite(qty) || qty <= 0) {
+            window.alert("수량은 1 이상의 숫자로 입력해 주세요.");
+            return;
+          }
+          if (!manualTarget?.productId) return;
+          setManualSubmitting(true);
+          const result = await onManualConfirm(manualTarget.productId, qty);
+          if (!result?.updated && result?.message) {
+            window.alert(`수동확인 저장 실패: ${result.message}`);
+          } else {
+            setManualModalOpen(false);
+            setManualTarget(null);
+            setManualQtyInput("");
+          }
+          setManualSubmitting(false);
+        }}
+        onClose={() => {
+          if (manualSubmitting) return;
+          setManualModalOpen(false);
+          setManualTarget(null);
+          setManualQtyInput("");
+        }}
+      />
       <HtmlCardModal
         open={!!previewHtmlCard}
         row={previewHtmlCard}
@@ -2571,11 +2688,21 @@ function ChannelSellers({
   );
 }
 
-function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
+function SellerDetail({
+  channelKey,
+  sellerName,
+  settings,
+  onBackToChannel,
+  onManualConfirm,
+}) {
   const [mode, setMode] = useState("daily");
   const [previewImage, setPreviewImage] = useState(null);
   const [previewHtmlCard, setPreviewHtmlCard] = useState(null);
   const [htmlGenerating, setHtmlGenerating] = useState(false);
+  const [manualModalOpen, setManualModalOpen] = useState(false);
+  const [manualTarget, setManualTarget] = useState(null);
+  const [manualQtyInput, setManualQtyInput] = useState("");
+  const [manualSubmitting, setManualSubmitting] = useState(false);
   const [timelineData, setTimelineData] = useState([]);
   const [timelineLoading, setTimelineLoading] = useState(true);
 
@@ -2670,6 +2797,17 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
                       ? "범위초과"
                       : "확인필요"}
                 </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setManualTarget(r);
+                    setManualQtyInput(String(r.pack || ""));
+                    setManualModalOpen(true);
+                  }}
+                  className="ml-2 rounded-md border border-amber-300 px-2 py-0.5 text-[10px] font-semibold text-amber-700 hover:bg-amber-50"
+                >
+                  수량확정
+                </button>
               </div>
             )}
             {diff >= 0 ? (
@@ -2735,6 +2873,39 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
 
   return (
     <div className="space-y-6">
+      <ManualQuantityModal
+        open={manualModalOpen}
+        target={manualTarget}
+        quantityInput={manualQtyInput}
+        onChangeQuantity={setManualQtyInput}
+        submitting={manualSubmitting}
+        onSubmit={async () => {
+          const qty = Number(manualQtyInput);
+          if (!Number.isFinite(qty) || qty <= 0) {
+            window.alert("수량은 1 이상의 숫자로 입력해 주세요.");
+            return;
+          }
+          if (!manualTarget?.productId) return;
+          setManualSubmitting(true);
+          const result = await onManualConfirm(manualTarget.productId, qty);
+          if (!result?.updated && result?.message) {
+            window.alert(`수동확인 저장 실패: ${result.message}`);
+          } else {
+            const refreshed = await fetchMallTimeline(sellerName, 30);
+            if (refreshed?.data) setTimelineData(refreshed.data);
+            setManualModalOpen(false);
+            setManualTarget(null);
+            setManualQtyInput("");
+          }
+          setManualSubmitting(false);
+        }}
+        onClose={() => {
+          if (manualSubmitting) return;
+          setManualModalOpen(false);
+          setManualTarget(null);
+          setManualQtyInput("");
+        }}
+      />
       <ImageModal
         open={!!previewImage}
         src={previewImage}
@@ -3104,6 +3275,15 @@ export default function App() {
     return result;
   };
 
+  const handleManualConfirmQuantity = async (productId, quantity) => {
+    const result = await confirmManualQuantity(productId, quantity);
+    if (result?.updated) {
+      const latest = await fetchLatestProducts();
+      if (latest?.data) setProductsData(latest);
+    }
+    return result;
+  };
+
   // 범위/기준가 유효성 보정(입력 실수 방지)
   const safeSettings = useMemo(() => {
     const min = clampNumber(settings.minPrice, 0, 999999999);
@@ -3195,6 +3375,7 @@ export default function App() {
                       setRoute({ page: "channel", channelKey, sellerName: "" })
                     }
                     onGenerateImage={handleGenerateImageOnDemand}
+                    onManualConfirm={handleManualConfirmQuantity}
                     data={data}
                     offers={offers}
                     mallsSummary={mallsSummary}
@@ -3231,6 +3412,7 @@ export default function App() {
                     channelKey={route.channelKey}
                     sellerName={route.sellerName}
                     settings={safeSettings}
+                    onManualConfirm={handleManualConfirmQuantity}
                     onBackToChannel={() =>
                       setRoute({
                         page: "channel",
