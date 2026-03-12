@@ -2014,6 +2014,7 @@ function MedicalSerialModal({
   open,
   serialInput,
   onChangeSerial,
+  onOpenLogin,
   onClose,
   onSubmit,
 }) {
@@ -2031,7 +2032,10 @@ function MedicalSerialModal({
           의료기기 페이지 이동
         </div>
         <div className="mt-1 text-sm text-slate-600">
-          시리얼 번호를 입력하면 해당 값과 함께 새 창으로 이동합니다.
+          먼저 로그인 페이지를 열어 로그인한 뒤, 시리얼 페이지 열기를 눌러 주세요.
+        </div>
+        <div className="mt-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
+          1) 로그인 페이지 열기  2) 시리얼 입력  3) 시리얼 페이지 열기
         </div>
         <input
           className="mt-4 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
@@ -2041,8 +2045,9 @@ function MedicalSerialModal({
           autoFocus
         />
         <div className="mt-4 flex items-center justify-end gap-2">
+          <GhostButton onClick={onOpenLogin}>로그인 페이지 열기</GhostButton>
           <GhostButton onClick={onClose}>취소</GhostButton>
-          <PrimaryButton onClick={onSubmit}>새 창 열기</PrimaryButton>
+          <PrimaryButton onClick={onSubmit}>시리얼 페이지 열기</PrimaryButton>
         </div>
       </div>
     </div>
@@ -2894,6 +2899,10 @@ export default function App() {
     setMedicalModalOpen(true);
   };
 
+  const handleOpenMedicalLoginPage = () => {
+    window.open(MEDICAL_DEVICE_BASE_URL, "_blank", "noopener,noreferrer");
+  };
+
   const handleSubmitMedicalModal = () => {
     const trimmed = (medicalSerialInput || "").trim();
     const url = trimmed
@@ -3160,6 +3169,7 @@ export default function App() {
         open={medicalModalOpen}
         serialInput={medicalSerialInput}
         onChangeSerial={setMedicalSerialInput}
+        onOpenLogin={handleOpenMedicalLoginPage}
         onClose={() => {
           setMedicalModalOpen(false);
           setMedicalSerialInput("");
