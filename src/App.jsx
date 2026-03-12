@@ -2938,16 +2938,10 @@ export default function App() {
             {"의료기기 링크\n(시리얼 입력)"}
           </HeaderNavButton>
           <HeaderNavButton
-            active={location.pathname === "/report"}
-            onClick={() => navigate("/report")}
+            active={location.pathname === "/range-report"}
+            onClick={() => navigate("/range-report")}
           >
-            {"Monthly LLM\nReport"}
-          </HeaderNavButton>
-          <HeaderNavButton
-            active={location.pathname === "/tracked-report"}
-            onClick={() => navigate("/tracked-report")}
-          >
-            {"Tracked Malls\nReport"}
+            {"Date Range\nReport"}
           </HeaderNavButton>
         </div>
       </div>
