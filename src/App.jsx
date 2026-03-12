@@ -1898,6 +1898,78 @@ function ImageModal({ open, src, onClose }) {
   );
 }
 
+function HtmlCardModal({ open, row, sellerName, onClose }) {
+  if (!open || !row) return null;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-5xl rounded-2xl bg-white p-4 shadow-2xl md:p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <div className="text-base font-semibold text-slate-900">HTML 카드 보기</div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-200 px-3 py-1 text-sm text-slate-700 hover:bg-slate-50"
+          >
+            닫기
+          </button>
+        </div>
+
+        <div className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[300px_1fr]">
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <img
+              src={row.captureThumb || "/placeholder.png"}
+              alt="evidence"
+              className="h-full w-full object-contain"
+            />
+          </div>
+          <div className="space-y-3">
+            <div className="text-xl font-bold leading-snug text-slate-900">
+              {row.productName || "-"}
+            </div>
+            <div className="text-sm text-slate-600">
+              판매처: {displaySellerName("naver", sellerName || "-")}
+            </div>
+            <div className="flex items-end gap-2">
+              <span className="text-3xl font-extrabold text-slate-900">
+                {formatNumber(row.unitPrice || 0)}
+              </span>
+              <span className="pb-1 text-base font-semibold text-slate-500">원/개</span>
+            </div>
+            <div className="grid grid-cols-[110px_1fr] gap-y-2 text-sm">
+              <div className="text-slate-500">총 가격</div>
+              <div className="font-semibold text-slate-900">
+                {formatKRW(row.price || 0)}
+              </div>
+              <div className="text-slate-500">수량</div>
+              <div className="font-semibold text-slate-900">{row.pack || 0}개</div>
+              <div className="text-slate-500">계산 방식</div>
+              <div className="font-semibold text-slate-900">{row.calcMethod || "-"}</div>
+              <div className="text-slate-500">생성 시각</div>
+              <div className="font-semibold text-slate-900">{row.capturedAt || "-"}</div>
+            </div>
+            <div className="pt-2">
+              <a
+                href={row.url || "#"}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white no-underline hover:bg-slate-700"
+              >
+                원문 바로가기
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MedicalSerialModal({
   open,
   serialInput,
@@ -2438,6 +2510,7 @@ function ChannelSellers({
 function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
   const [mode, setMode] = useState("daily");
   const [previewImage, setPreviewImage] = useState(null);
+  const [previewHtmlCard, setPreviewHtmlCard] = useState(null);
   const [timelineData, setTimelineData] = useState([]);
   const [timelineLoading, setTimelineLoading] = useState(true);
 
@@ -2563,17 +2636,33 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
       key: "captureThumb",
       header: "캡처",
       render: (r) => (
-        <button
-          type="button"
-          onClick={() => setPreviewImage(r.captureThumb)}
-          className="group"
-        >
-          <img
-            src={r.captureThumb}
-            alt="capture"
-            className="h-12 w-20 rounded-lg object-cover border border-slate-200 group-hover:ring-2 group-hover:ring-slate-400"
-          />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setPreviewHtmlCard(r)}
+            className="group"
+          >
+            <img
+              src={r.captureThumb}
+              alt="capture"
+              className="h-12 w-20 rounded-lg object-cover border border-slate-200 group-hover:ring-2 group-hover:ring-slate-400"
+            />
+          </button>
+          <button
+            type="button"
+            onClick={() => setPreviewHtmlCard(r)}
+            className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+          >
+            HTML 카드
+          </button>
+          <button
+            type="button"
+            onClick={() => setPreviewImage(r.captureThumb)}
+            className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+          >
+            이미지
+          </button>
+        </div>
       ),
     },
   ];
@@ -2584,6 +2673,12 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
         open={!!previewImage}
         src={previewImage}
         onClose={() => setPreviewImage(null)}
+      />
+      <HtmlCardModal
+        open={!!previewHtmlCard}
+        row={previewHtmlCard}
+        sellerName={sellerName}
+        onClose={() => setPreviewHtmlCard(null)}
       />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
