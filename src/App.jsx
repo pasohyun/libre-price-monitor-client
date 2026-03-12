@@ -2937,19 +2937,6 @@ export default function App() {
           >
             {"의료기기 링크\n(시리얼 입력)"}
           </HeaderNavButton>
-          {CHANNELS.map((c) => (
-            <HeaderNavButton
-              key={c.key}
-              active={
-                location.pathname === "/" &&
-                route.page !== "main" &&
-                route.channelKey === c.key
-              }
-              onClick={() => goChannelPage(c.key)}
-            >
-              {HEADER_LABELS[c.key] || c.label}
-            </HeaderNavButton>
-          ))}
           <HeaderNavButton
             active={location.pathname === "/range-report"}
             onClick={() => navigate("/range-report")}
