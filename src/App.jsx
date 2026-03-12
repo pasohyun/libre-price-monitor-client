@@ -2219,10 +2219,8 @@ function MainDashboard({
           if (!previewHtmlCard?.productId) return;
           setHtmlGenerating(true);
           const res = await onGenerateImage(previewHtmlCard.productId);
-          if (res?.card_image_path) {
-            setPreviewHtmlCard((prev) =>
-              prev ? { ...prev, captureThumb: res.card_image_path } : prev,
-            );
+          if (!res?.card_image_path && res?.message) {
+            window.alert(`이미지 생성 실패: ${res.message}`);
           }
           setHtmlGenerating(false);
         }}
@@ -2742,18 +2740,7 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
           if (!previewHtmlCard?.productId) return;
           setHtmlGenerating(true);
           const res = await generateCardImageOnDemand(previewHtmlCard.productId);
-          if (res?.card_image_path) {
-            setTimelineData((prev) =>
-              prev.map((it) =>
-                it.id === previewHtmlCard.productId
-                  ? { ...it, captureThumb: res.card_image_path }
-                  : it,
-              ),
-            );
-            setPreviewHtmlCard((prev) =>
-              prev ? { ...prev, captureThumb: res.card_image_path } : prev,
-            );
-          } else if (res?.message) {
+          if (!res?.card_image_path && res?.message) {
             window.alert(`이미지 생성 실패: ${res.message}`);
           }
           setHtmlGenerating(false);
@@ -3087,7 +3074,6 @@ export default function App() {
             ? {
                 ...it,
                 card_image_path: result.card_image_path,
-                image_url: result.card_image_path,
               }
             : it,
         ),
