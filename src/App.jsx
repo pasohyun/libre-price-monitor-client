@@ -2232,26 +2232,28 @@ function MainDashboard({
           <div className="space-y-1">
             <div className="font-semibold">{formatKRW(r.unitPrice)}</div>
             {needsCheck && (
-              <div className="text-xs">
-                <Badge tone="warning">⚠ 수동확인</Badge>
-                <span className="ml-1 text-amber-600 text-[10px]">
-                  {r.calcMethod === "가격역산(보정)"
-                    ? "수량추정"
-                    : r.calcMethod === "텍스트분석(범위초과)"
-                      ? "범위초과"
-                      : "확인필요"}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setManualTarget(r);
-                    setManualQtyInput(String(r.pack || ""));
-                    setManualModalOpen(true);
-                  }}
-                  className="ml-2 rounded-md border border-amber-300 px-2 py-0.5 text-[10px] font-semibold text-amber-700 hover:bg-amber-50"
-                >
-                  수량확정
-                </button>
+              <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-2 py-1">
+                <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                  <Badge tone="warning">⚠ 수동확인</Badge>
+                  <span className="rounded-full border border-amber-200 bg-white px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                    {r.calcMethod === "가격역산(보정)"
+                      ? "수량추정"
+                      : r.calcMethod === "텍스트분석(범위초과)"
+                        ? "범위초과"
+                        : "확인필요"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setManualTarget(r);
+                      setManualQtyInput(String(r.pack || ""));
+                      setManualModalOpen(true);
+                    }}
+                    className="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-amber-700 hover:bg-amber-100"
+                  >
+                    수량확정
+                  </button>
+                </div>
               </div>
             )}
             {Number.isFinite(diff) && diff >= 0 ? (
@@ -2788,26 +2790,28 @@ function SellerDetail({
           <div className="space-y-1">
             <div className="font-semibold">{formatKRW(r.unitPrice)}</div>
             {needsCheck && (
-              <div className="text-xs">
-                <Badge tone="warning">⚠ 수동확인</Badge>
-                <span className="ml-1 text-amber-600 text-[10px]">
-                  {r.calcMethod === "가격역산(보정)"
-                    ? "수량추정"
-                    : r.calcMethod === "텍스트분석(범위초과)"
-                      ? "범위초과"
-                      : "확인필요"}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setManualTarget(r);
-                    setManualQtyInput(String(r.pack || ""));
-                    setManualModalOpen(true);
-                  }}
-                  className="ml-2 rounded-md border border-amber-300 px-2 py-0.5 text-[10px] font-semibold text-amber-700 hover:bg-amber-50"
-                >
-                  수량확정
-                </button>
+              <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-2 py-1">
+                <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                  <Badge tone="warning">⚠ 수동확인</Badge>
+                  <span className="rounded-full border border-amber-200 bg-white px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                    {r.calcMethod === "가격역산(보정)"
+                      ? "수량추정"
+                      : r.calcMethod === "텍스트분석(범위초과)"
+                        ? "범위초과"
+                        : "확인필요"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setManualTarget(r);
+                      setManualQtyInput(String(r.pack || ""));
+                      setManualModalOpen(true);
+                    }}
+                    className="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-amber-700 hover:bg-amber-100"
+                  >
+                    수량확정
+                  </button>
+                </div>
               </div>
             )}
             {diff >= 0 ? (
