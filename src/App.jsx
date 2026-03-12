@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import "./App.css";
 import Report from "./Report.jsx";
-import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
+import { Routes, Route, Link, useLocation, useNavigate } from "react-router-dom";
 import MonthlyReportPage from "./pages/MonthlyReportPage";
 import RangeReportPage from "./pages/RangeReportPage";
 
