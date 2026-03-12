@@ -39,7 +39,11 @@ const MEDICAL_DEVICE_BASE_URL = "https://2d.daewoong.co.kr/frame/index.do";
 
 async function fetchLatestProducts() {
   try {
-    const response = await fetch(`${API_BASE}/products/latest`);
+    let response = await fetch(`${API_BASE}/products/today`);
+    if (response.status === 404) {
+      // Backward compatibility for older backend deployments
+      response = await fetch(`${API_BASE}/products/latest`);
+    }
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`);
     }
@@ -3057,8 +3061,10 @@ export default function App() {
         unitPrice: item.unit_price,
         calcMethod: item.calc_method || "텍스트분석",
         url: item.link || "#",
-        capturedAt: formatDateTimeKST(productsData.snapshot_time),
-        capturedAtMs: parseDateLike(productsData.snapshot_time)?.getTime() ?? 0,
+        capturedAt: formatDateTimeKST(item.snapshot_time || productsData.snapshot_time),
+        capturedAtMs:
+          parseDateLike(item.snapshot_time || productsData.snapshot_time)?.getTime() ??
+          0,
         captureThumb: item.image_url || "/placeholder.png",
       };
     });
