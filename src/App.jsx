@@ -3,6 +3,7 @@ import "./App.css";
 import Report from "./Report.jsx";
 import { Routes, Route, Link } from "react-router-dom";
 import MonthlyReportPage from "./pages/MonthlyReportPage";
+import RangeReportPage from "./pages/RangeReportPage";
 
 import {
   LineChart,
@@ -2672,17 +2673,19 @@ export default function App() {
     <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/80 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
         <div className="flex items-center gap-3">
-          <img
-            src="/ADC_Logo_FSL2_YCH_reduced_RGB.png"
-            alt="FreeStyle Libre 2"
-            className="h-10 object-contain"
-          />
-          <div>
-            <div className="text-sm text-slate-500">온라인 모니터링</div>
-            <div className="font-semibold text-slate-900">
-              Libre2 Price Monitor
+          <Link to="/" className="flex items-center gap-3 no-underline" onClick={() => setRoute({ page: "main", channelKey: "", sellerName: "" })}>
+            <img
+              src="/ADC_Logo_FSL2_YCH_reduced_RGB.png"
+              alt="FreeStyle Libre 2"
+              className="h-10 object-contain"
+            />
+            <div>
+              <div className="text-sm text-slate-500">온라인 모니터링</div>
+              <div className="font-semibold text-slate-900">
+                Libre2 Price Monitor
+              </div>
             </div>
-          </div>
+          </Link>
         </div>
         <div className="hidden md:flex items-center gap-2">
           {CHANNELS.map((c) => (
@@ -2701,6 +2704,12 @@ export default function App() {
             className="rounded-xl px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-slate-300"
           >
             Monthly LLM Report
+          </Link>
+          <Link
+            to="/range-report"
+            className="rounded-xl px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+          >
+            Date Range Report
           </Link>
           <Link
             to="/tracked-report"
@@ -2788,6 +2797,7 @@ export default function App() {
             }
           />
           <Route path="/report" element={<MonthlyReportPage />} />
+          <Route path="/range-report" element={<RangeReportPage />} />
           <Route path="/tracked-report" element={<Report />} />
         </Routes>
       </main>
