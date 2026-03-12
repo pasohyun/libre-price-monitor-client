@@ -2753,6 +2753,8 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
             setPreviewHtmlCard((prev) =>
               prev ? { ...prev, captureThumb: res.card_image_path } : prev,
             );
+          } else if (res?.message) {
+            window.alert(`이미지 생성 실패: ${res.message}`);
           }
           setHtmlGenerating(false);
         }}
@@ -3090,6 +3092,13 @@ export default function App() {
             : it,
         ),
       }));
+      // 서버 저장 결과를 다시 읽어와 새로고침 후에도 동일하게 보이도록 동기화
+      const latest = await fetchLatestProducts();
+      if (latest?.data) {
+        setProductsData(latest);
+      }
+    } else if (result?.message) {
+      window.alert(`이미지 생성 실패: ${result.message}`);
     }
     return result;
   };
