@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import "./App.css";
 import Report from "./Report.jsx";
-import { Routes, Route, Link } from "react-router-dom";
+import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import MonthlyReportPage from "./pages/MonthlyReportPage";
 import RangeReportPage from "./pages/RangeReportPage";
 
@@ -35,6 +35,7 @@ import {
 // -----------------------------
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const MEDICAL_DEVICE_BASE_URL = "https://2d.daewoong.co.kr/frame/index.do";
 
 async function fetchLatestProducts() {
   try {
@@ -98,6 +99,36 @@ async function fetchMallsTop(limit = 10) {
   }
 }
 
+async function runCrawlNow() {
+  try {
+    const response = await fetch(`${API_BASE}/products/crawl/run`, {
+      method: "POST",
+    });
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    console.error("Failed to run crawl now:", error);
+    return { started: false, status: "error", message: String(error) };
+  }
+}
+
+async function fetchCrawlStatus() {
+  try {
+    const response = await fetch(`${API_BASE}/products/crawl/status`);
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    console.error("Failed to fetch crawl status:", error);
+    return {
+      running: false,
+      last_started_at: null,
+      last_finished_at: null,
+      last_error: String(error),
+      timezone: "Asia/Seoul",
+    };
+  }
+}
+
 async function fetchMallTimeline(mallName, days = 30) {
   try {
     const response = await fetch(
@@ -120,6 +151,12 @@ const CHANNELS = [
   { key: "coupang", label: "쿠팡", active: true },
   { key: "others", label: "기타(G마켓/옥션)", active: true },
 ];
+
+const HEADER_LABELS = {
+  naver: "네이버\n스토어",
+  coupang: "쿠팡",
+  others: "기타(G마켓/\n옥션)",
+};
 
 const MARKET_BY_CHANNEL = {
   naver: ["스마트스토어"],
@@ -991,6 +1028,37 @@ const formatKRW = (n) => {
   return n.toLocaleString("ko-KR") + "원";
 };
 
+const parseDateLike = (v) => {
+  if (!v) return null;
+  if (v instanceof Date) {
+    return Number.isNaN(v.getTime()) ? null : v;
+  }
+  if (typeof v === "number") {
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const s = String(v).trim();
+  if (!s) return null;
+  const normalized = s.includes("T") ? s : s.replace(" ", "T");
+  const d = new Date(normalized);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+};
+
+const formatDateTimeKST = (v) => {
+  const d = parseDateLike(v);
+  if (!d) return "-";
+  return d.toLocaleString("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+};
+
 const clampNumber = (v, min, max) => {
   const n = Number(v);
   if (Number.isNaN(n)) return min;
@@ -998,6 +1066,11 @@ const clampNumber = (v, min, max) => {
 };
 
 const channelLabel = (key) => CHANNELS.find((c) => c.key === key)?.label ?? key;
+const displaySellerName = (channel, sellerName) => {
+  const name = String(sellerName || "").trim();
+  if (channel === "naver" && name === "네이버") return "최저가비교";
+  return name || "알 수 없음";
+};
 
 // -----------------------------
 // UI Primitives (no external UI lib)
@@ -1130,6 +1203,24 @@ function GhostButton({ children, onClick }) {
       className="rounded-xl px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-slate-300"
     >
       {children}
+    </button>
+  );
+}
+
+function HeaderNavButton({ active = false, children, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`h-14 min-w-[112px] rounded-xl border px-3 py-2 text-sm font-semibold leading-tight transition ${
+        active
+          ? "border-slate-900 bg-slate-900 text-white"
+          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+      }`}
+    >
+      <span className="block text-center whitespace-pre-line break-words">
+        {children}
+      </span>
     </button>
   );
 }
@@ -1444,7 +1535,8 @@ function SingleSellerPriceTrend({ mode, timeline, sellerName, height = 240 }) {
       // 일별 데이터: capturedAt을 날짜별로 그룹화하고 평균 계산
       const dailyMap = {};
       timeline.forEach((item) => {
-        const date = new Date(item.capturedAt);
+        const date = parseDateLike(item.capturedAt);
+        if (!date) return;
         const dateKey = `${String(date.getMonth() + 1).padStart(
           2,
           "0",
@@ -1478,7 +1570,8 @@ function SingleSellerPriceTrend({ mode, timeline, sellerName, height = 240 }) {
       // 월별 데이터: capturedAt을 월별로 그룹화하고 평균 계산
       const monthlyMap = {};
       timeline.forEach((item) => {
-        const date = new Date(item.capturedAt);
+        const date = parseDateLike(item.capturedAt);
+        if (!date) return;
         const monthKey = `${date.getMonth() + 1}월`;
 
         if (!monthlyMap[monthKey]) {
@@ -1633,8 +1726,17 @@ function SingleSellerPriceTrend({ mode, timeline, sellerName, height = 240 }) {
 // Settings Panel
 // -----------------------------
 
-function SettingsPanel({ settings, onChange }) {
+function SettingsPanel({
+  settings,
+  onChange,
+  crawlStatus,
+  crawlActionLoading,
+  onRunCrawl,
+}) {
   const { minPrice, maxPrice, threshold, productName } = settings;
+  const running = !!crawlStatus?.running;
+  const lastStarted = formatDateTimeKST(crawlStatus?.last_started_at);
+  const lastFinished = formatDateTimeKST(crawlStatus?.last_finished_at);
 
   return (
     <Card title="설정" className="h-full">
@@ -1735,6 +1837,30 @@ function SettingsPanel({ settings, onChange }) {
             예: 프리스타일 리브레 2
           </div>
         </div>
+
+        <div className="border-t border-slate-200 pt-4">
+          <div className="text-sm font-medium text-slate-700">크롤링 실행</div>
+          <div className="mt-2">
+            <PrimaryButton
+              onClick={onRunCrawl}
+              disabled={running || crawlActionLoading}
+            >
+              {running
+                ? "크롤링 실행 중..."
+                : crawlActionLoading
+                  ? "요청 중..."
+                  : "지금 크롤링 실행"}
+            </PrimaryButton>
+          </div>
+          <div className="mt-2 text-xs text-slate-500">
+            최근 시작: {lastStarted} / 최근 종료: {lastFinished}
+          </div>
+          {crawlStatus?.last_error && (
+            <div className="mt-1 text-xs text-red-600">
+              최근 오류: {String(crawlStatus.last_error)}
+            </div>
+          )}
+        </div>
       </div>
     </Card>
   );
@@ -1772,10 +1898,52 @@ function ImageModal({ open, src, onClose }) {
   );
 }
 
+function MedicalSerialModal({
+  open,
+  serialInput,
+  onChangeSerial,
+  onClose,
+  onSubmit,
+}) {
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={onClose}
+    >
+      <div
+        className="w-[92vw] max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="text-lg font-semibold text-slate-900">
+          의료기기 페이지 이동
+        </div>
+        <div className="mt-1 text-sm text-slate-600">
+          시리얼 번호를 입력하면 해당 값과 함께 새 창으로 이동합니다.
+        </div>
+        <input
+          className="mt-4 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
+          placeholder="시리얼 번호 입력"
+          value={serialInput}
+          onChange={(e) => onChangeSerial(e.target.value)}
+          autoFocus
+        />
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <GhostButton onClick={onClose}>취소</GhostButton>
+          <PrimaryButton onClick={onSubmit}>새 창 열기</PrimaryButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MainDashboard({
   settings,
   safeSettings,
   onChangeSettings,
+  crawlStatus,
+  crawlActionLoading,
+  onRunCrawl,
   onGoChannel,
   data,
   offers,
@@ -1811,10 +1979,13 @@ function MainDashboard({
       globalMin = Math.min(globalMin, o.unitPrice);
     }
 
-    const lastCollected = offers
-      .map((o) => o.capturedAt)
-      .sort()
-      .slice(-1)[0];
+    const lastCollectedMs = offers.reduce(
+      (max, o) =>
+        typeof o.capturedAtMs === "number" && o.capturedAtMs > max
+          ? o.capturedAtMs
+          : max,
+      -1,
+    );
 
     return {
       belowTotal: byChannel.naver + byChannel.coupang + byChannel.others,
@@ -1822,7 +1993,8 @@ function MainDashboard({
       belowCoupang: byChannel.coupang,
       belowOthers: byChannel.others,
       minUnitPrice: globalMin === Infinity ? null : globalMin,
-      lastCollected: lastCollected || "-",
+      lastCollected:
+        lastCollectedMs > 0 ? formatDateTimeKST(lastCollectedMs) : "-",
     };
   }, [offers, safeSettings.threshold]);
 
@@ -1834,7 +2006,11 @@ function MainDashboard({
         <span className="font-medium">{channelLabel(r.channel)}</span>
       ),
     },
-    { key: "seller", header: "판매처" },
+    {
+      key: "seller",
+      header: "판매처",
+      render: (r) => displaySellerName(r.channel, r.seller),
+    },
     { key: "productName", header: "상품명" },
     {
       key: "price",
@@ -1929,7 +2105,13 @@ function MainDashboard({
 
       <div className="grid grid-cols-12 gap-4">
         <div className="col-span-12 lg:col-span-4">
-          <SettingsPanel settings={settings} onChange={onChangeSettings} />
+          <SettingsPanel
+            settings={settings}
+            onChange={onChangeSettings}
+            crawlStatus={crawlStatus}
+            crawlActionLoading={crawlActionLoading}
+            onRunCrawl={onRunCrawl}
+          />
         </div>
 
         <div className="col-span-12 lg:col-span-8">
@@ -2214,7 +2396,7 @@ function ChannelSellers({
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-300">
               <div className="text-sm text-slate-500">판매처</div>
               <div className="mt-1 text-lg font-semibold text-slate-900">
-                {s.seller}
+                {displaySellerName(channelKey, s.seller)}
               </div>
 
               <div className="mt-3 space-y-1 text-sm">
@@ -2300,9 +2482,14 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
 
   const rows = filteredTimeline
     .slice()
-    .sort((a, b) => (a.capturedAt > b.capturedAt ? -1 : 1))
+    .sort((a, b) => {
+      const aMs = parseDateLike(a.capturedAt)?.getTime() ?? 0;
+      const bMs = parseDateLike(b.capturedAt)?.getTime() ?? 0;
+      return bMs - aMs;
+    })
     .map((t, idx) => ({
       ...t,
+      capturedAt: formatDateTimeKST(t.capturedAt),
       __rowKey: `${channelKey}-${sellerName}-${idx}`,
     }));
 
@@ -2402,7 +2589,7 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
         <div>
           <div className="text-sm text-slate-500">세부데이터</div>
           <div className="text-2xl font-semibold text-slate-900">
-            {channelLabel(channelKey)} · {sellerName}
+            {channelLabel(channelKey)} · {displaySellerName(channelKey, sellerName)}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -2420,7 +2607,9 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">판매처</span>
-                <span className="font-medium">{sellerName}</span>
+                <span className="font-medium">
+                  {displaySellerName(channelKey, sellerName)}
+                </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">평균 단가</span>
@@ -2485,6 +2674,9 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
 // -----------------------------
 
 export default function App() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
   // 간단 라우팅: "main" | "channel" | "seller"
   const [route, setRoute] = useState({
     page: "main",
@@ -2518,6 +2710,40 @@ export default function App() {
   });
   const [mallsTop, setMallsTop] = useState({ count: 0, data: [] });
   const [loading, setLoading] = useState(true);
+  const [crawlActionLoading, setCrawlActionLoading] = useState(false);
+  const [crawlStatus, setCrawlStatus] = useState({
+    running: false,
+    last_started_at: null,
+    last_finished_at: null,
+    last_error: null,
+    timezone: "Asia/Seoul",
+  });
+  const [medicalModalOpen, setMedicalModalOpen] = useState(false);
+  const [medicalSerialInput, setMedicalSerialInput] = useState("");
+
+  const handleOpenMedicalDeviceSite = () => {
+    setMedicalModalOpen(true);
+  };
+
+  const handleSubmitMedicalModal = () => {
+    const trimmed = (medicalSerialInput || "").trim();
+    const url = trimmed
+      ? `${MEDICAL_DEVICE_BASE_URL}?serialNumber=${encodeURIComponent(trimmed)}`
+      : MEDICAL_DEVICE_BASE_URL;
+    window.open(url, "_blank", "noopener,noreferrer");
+    setMedicalModalOpen(false);
+    setMedicalSerialInput("");
+  };
+
+  const goMainDashboard = () => {
+    setRoute((prev) => ({ ...prev, page: "main", sellerName: "" }));
+    navigate("/");
+  };
+
+  const goChannelPage = (channelKey) => {
+    setRoute({ page: "channel", channelKey, sellerName: "" });
+    navigate("/");
+  };
 
   // API 데이터 로드
   useEffect(() => {
@@ -2544,6 +2770,31 @@ export default function App() {
     }
     loadData();
   }, []);
+
+  useEffect(() => {
+    let timer = null;
+    const pollStatus = async () => {
+      const status = await fetchCrawlStatus();
+      setCrawlStatus(status);
+    };
+    pollStatus();
+    timer = setInterval(pollStatus, 10000);
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, []);
+
+  const handleRunCrawlNow = async () => {
+    if (crawlActionLoading || crawlStatus.running) return;
+    setCrawlActionLoading(true);
+    const result = await runCrawlNow();
+    if (result?.status === "started") {
+      setCrawlStatus((prev) => ({ ...prev, running: true, last_error: null }));
+    }
+    const latestStatus = await fetchCrawlStatus();
+    setCrawlStatus(latestStatus);
+    setCrawlActionLoading(false);
+  };
 
   // 판매처별 추이 데이터 변환 (그래프용)
   const data = useMemo(() => {
@@ -2640,15 +2891,8 @@ export default function App() {
         unitPrice: item.unit_price,
         calcMethod: item.calc_method || "텍스트분석",
         url: item.link || "#",
-        capturedAt: productsData.snapshot_time
-          ? new Date(productsData.snapshot_time).toLocaleString("ko-KR", {
-              year: "numeric",
-              month: "2-digit",
-              day: "2-digit",
-              hour: "2-digit",
-              minute: "2-digit",
-            })
-          : "-",
+        capturedAt: formatDateTimeKST(productsData.snapshot_time),
+        capturedAtMs: parseDateLike(productsData.snapshot_time)?.getTime() ?? 0,
         captureThumb: item.image_url || "/placeholder.png",
       };
     });
@@ -2688,20 +2932,27 @@ export default function App() {
           </Link>
         </div>
         <div className="hidden md:flex items-center gap-2">
+          <HeaderNavButton
+            onClick={handleOpenMedicalDeviceSite}
+          >
+            {"의료기기 링크\n(시리얼 입력)"}
+          </HeaderNavButton>
           {CHANNELS.map((c) => (
-            <Chip
+            <HeaderNavButton
               key={c.key}
-              active={route.page !== "main" && route.channelKey === c.key}
-              onClick={() =>
-                setRoute({ page: "channel", channelKey: c.key, sellerName: "" })
+              active={
+                location.pathname === "/" &&
+                route.page !== "main" &&
+                route.channelKey === c.key
               }
+              onClick={() => goChannelPage(c.key)}
             >
-              {c.label}
-            </Chip>
+              {HEADER_LABELS[c.key] || c.label}
+            </HeaderNavButton>
           ))}
-          <Link
-            to="/report"
-            className="rounded-xl px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+          <HeaderNavButton
+            active={location.pathname === "/report"}
+            onClick={() => navigate("/report")}
           >
             Monthly LLM Report
           </Link>
@@ -2715,8 +2966,8 @@ export default function App() {
             to="/tracked-report"
             className="rounded-xl px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-slate-300"
           >
-            Tracked Malls Report
-          </Link>
+            {"Tracked Malls\nReport"}
+          </HeaderNavButton>
         </div>
       </div>
     </div>
@@ -2733,6 +2984,16 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50">
+      <MedicalSerialModal
+        open={medicalModalOpen}
+        serialInput={medicalSerialInput}
+        onChangeSerial={setMedicalSerialInput}
+        onClose={() => {
+          setMedicalModalOpen(false);
+          setMedicalSerialInput("");
+        }}
+        onSubmit={handleSubmitMedicalModal}
+      />
       {header}
       <main className="mx-auto max-w-6xl px-4 py-6">
         <Routes>
@@ -2745,6 +3006,9 @@ export default function App() {
                     settings={settings}
                     safeSettings={safeSettings}
                     onChangeSettings={setSettings}
+                    crawlStatus={crawlStatus}
+                    crawlActionLoading={crawlActionLoading}
+                    onRunCrawl={handleRunCrawlNow}
                     onGoChannel={(channelKey) =>
                       setRoute({ page: "channel", channelKey, sellerName: "" })
                     }
@@ -2799,6 +3063,28 @@ export default function App() {
           <Route path="/report" element={<MonthlyReportPage />} />
           <Route path="/range-report" element={<RangeReportPage />} />
           <Route path="/tracked-report" element={<Report />} />
+          <Route
+            path="/report"
+            element={
+              <div className="space-y-3">
+                <div className="flex justify-end">
+                  <GhostButton onClick={goMainDashboard}>← 메인으로</GhostButton>
+                </div>
+                <MonthlyReportPage />
+              </div>
+            }
+          />
+          <Route
+            path="/tracked-report"
+            element={
+              <div className="space-y-3">
+                <div className="flex justify-end">
+                  <GhostButton onClick={goMainDashboard}>← 메인으로</GhostButton>
+                </div>
+                <Report />
+              </div>
+            }
+          />
         </Routes>
       </main>
       {footer}
