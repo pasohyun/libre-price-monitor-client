@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import "./App.css";
 import Report from "./Report.jsx";
-import { Routes, Route, Link, useLocation, useNavigate } from "react-router-dom";
+import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import MonthlyReportPage from "./pages/MonthlyReportPage";
 import RangeReportPage from "./pages/RangeReportPage";
 
@@ -139,6 +139,29 @@ async function fetchMallTimeline(mallName, days = 30) {
   } catch (error) {
     console.error("Failed to fetch mall timeline:", error);
     return { mall_name: mallName, days, count: 0, data: [] };
+  }
+}
+
+async function generateCardImageOnDemand(productId) {
+  try {
+    const response = await fetch(
+      `${API_BASE}/products/card/generate?product_id=${encodeURIComponent(productId)}`,
+      { method: "POST" },
+    );
+    if (!response.ok) {
+      let detail = `API error: ${response.status}`;
+      try {
+        const err = await response.json();
+        if (err?.detail) detail = String(err.detail);
+      } catch {
+        // ignore json parse failure
+      }
+      throw new Error(detail);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error("Failed to generate card image:", error);
+    return { created: false, card_image_path: null, message: String(error) };
   }
 }
 
@@ -1898,6 +1921,91 @@ function ImageModal({ open, src, onClose }) {
   );
 }
 
+function HtmlCardModal({
+  open,
+  row,
+  sellerName,
+  onClose,
+  onGenerateImage,
+  generatingImage = false,
+}) {
+  if (!open || !row) return null;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-5xl rounded-2xl bg-white p-4 shadow-2xl md:p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <div className="text-base font-semibold text-slate-900">HTML 카드 보기</div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-200 px-3 py-1 text-sm text-slate-700 hover:bg-slate-50"
+          >
+            닫기
+          </button>
+        </div>
+
+        <div className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[300px_1fr]">
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <img
+              src={row.captureThumb || "/placeholder.png"}
+              alt="evidence"
+              className="h-full w-full object-contain"
+            />
+          </div>
+          <div className="space-y-3">
+            <div className="text-xl font-bold leading-snug text-slate-900">
+              {row.productName || "-"}
+            </div>
+            <div className="text-sm text-slate-600">판매처: {sellerName || "-"}</div>
+            <div className="flex items-end gap-2">
+              <span className="text-3xl font-extrabold text-slate-900">
+                {Number(row.unitPrice || 0).toLocaleString("ko-KR")}
+              </span>
+              <span className="pb-1 text-base font-semibold text-slate-500">원/개</span>
+            </div>
+            <div className="grid grid-cols-[110px_1fr] gap-y-2 text-sm">
+              <div className="text-slate-500">총 가격</div>
+              <div className="font-semibold text-slate-900">
+                {formatKRW(row.price || 0)}
+              </div>
+              <div className="text-slate-500">수량</div>
+              <div className="font-semibold text-slate-900">{row.pack || 0}개</div>
+              <div className="text-slate-500">계산 방식</div>
+              <div className="font-semibold text-slate-900">{row.calcMethod || "-"}</div>
+              <div className="text-slate-500">생성 시각</div>
+              <div className="font-semibold text-slate-900">{row.capturedAt || "-"}</div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 pt-2">
+              <a
+                href={row.url || "#"}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white no-underline hover:bg-slate-700"
+              >
+                원문 바로가기
+              </a>
+              <button
+                type="button"
+                onClick={onGenerateImage}
+                disabled={generatingImage || !row.productId}
+                className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {generatingImage ? "이미지 생성 중..." : "이미지 생성"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MedicalSerialModal({
   open,
   serialInput,
@@ -1945,13 +2053,15 @@ function MainDashboard({
   crawlActionLoading,
   onRunCrawl,
   onGoChannel,
+  onGenerateImage,
   data,
   offers,
   mallsSummary,
   mallsTop,
 }) {
   const [trendMode, setTrendMode] = useState("daily"); // daily/monthly
-  const [previewImage, setPreviewImage] = useState(null);
+  const [previewHtmlCard, setPreviewHtmlCard] = useState(null);
+  const [htmlGenerating, setHtmlGenerating] = useState(false);
   const [channelFilter, setChannelFilter] = useState("all"); // all | naver | coupang | others
 
   const filteredOffers = useMemo(() => {
@@ -2082,14 +2192,10 @@ function MainDashboard({
       render: (r) => (
         <button
           type="button"
-          onClick={() => setPreviewImage(r.captureThumb)}
-          className="group"
+          onClick={() => setPreviewHtmlCard(r)}
+          className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
         >
-          <img
-            src={r.captureThumb}
-            alt="capture"
-            className="h-12 w-20 rounded-lg object-cover border border-slate-200 group-hover:ring-2 group-hover:ring-slate-400"
-          />
+          HTML 카드
         </button>
       ),
     },
@@ -2097,10 +2203,33 @@ function MainDashboard({
 
   return (
     <div className="space-y-6">
-      <ImageModal
-        open={!!previewImage}
-        src={previewImage}
-        onClose={() => setPreviewImage(null)}
+      <HtmlCardModal
+        open={!!previewHtmlCard}
+        row={previewHtmlCard}
+        sellerName={
+          previewHtmlCard
+            ? displaySellerName(
+                previewHtmlCard.channel,
+                previewHtmlCard.seller || "-",
+              )
+            : "-"
+        }
+        generatingImage={htmlGenerating}
+        onGenerateImage={async () => {
+          if (!previewHtmlCard?.productId) return;
+          setHtmlGenerating(true);
+          const res = await onGenerateImage(previewHtmlCard.productId);
+          if (res?.card_image_path) {
+            setPreviewHtmlCard((prev) =>
+              prev ? { ...prev, captureThumb: res.card_image_path } : prev,
+            );
+          }
+          setHtmlGenerating(false);
+        }}
+        onClose={() => {
+          setPreviewHtmlCard(null);
+          setHtmlGenerating(false);
+        }}
       />
 
       <div className="grid grid-cols-12 gap-4">
@@ -2438,6 +2567,8 @@ function ChannelSellers({
 function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
   const [mode, setMode] = useState("daily");
   const [previewImage, setPreviewImage] = useState(null);
+  const [previewHtmlCard, setPreviewHtmlCard] = useState(null);
+  const [htmlGenerating, setHtmlGenerating] = useState(false);
   const [timelineData, setTimelineData] = useState([]);
   const [timelineLoading, setTimelineLoading] = useState(true);
 
@@ -2489,6 +2620,7 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
     })
     .map((t, idx) => ({
       ...t,
+      productId: t.id ?? null,
       capturedAt: formatDateTimeKST(t.capturedAt),
       __rowKey: `${channelKey}-${sellerName}-${idx}`,
     }));
@@ -2563,17 +2695,33 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
       key: "captureThumb",
       header: "캡처",
       render: (r) => (
-        <button
-          type="button"
-          onClick={() => setPreviewImage(r.captureThumb)}
-          className="group"
-        >
-          <img
-            src={r.captureThumb}
-            alt="capture"
-            className="h-12 w-20 rounded-lg object-cover border border-slate-200 group-hover:ring-2 group-hover:ring-slate-400"
-          />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setPreviewHtmlCard(r)}
+            className="group"
+          >
+            <img
+              src={r.captureThumb}
+              alt="capture"
+              className="h-12 w-20 rounded-lg object-cover border border-slate-200 group-hover:ring-2 group-hover:ring-slate-400"
+            />
+          </button>
+          <button
+            type="button"
+            onClick={() => setPreviewHtmlCard(r)}
+            className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+          >
+            HTML 카드
+          </button>
+          <button
+            type="button"
+            onClick={() => setPreviewImage(r.captureThumb)}
+            className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+          >
+            이미지
+          </button>
+        </div>
       ),
     },
   ];
@@ -2584,6 +2732,34 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
         open={!!previewImage}
         src={previewImage}
         onClose={() => setPreviewImage(null)}
+      />
+      <HtmlCardModal
+        open={!!previewHtmlCard}
+        row={previewHtmlCard}
+        sellerName={displaySellerName(channelKey, sellerName)}
+        generatingImage={htmlGenerating}
+        onGenerateImage={async () => {
+          if (!previewHtmlCard?.productId) return;
+          setHtmlGenerating(true);
+          const res = await generateCardImageOnDemand(previewHtmlCard.productId);
+          if (res?.card_image_path) {
+            setTimelineData((prev) =>
+              prev.map((it) =>
+                it.id === previewHtmlCard.productId
+                  ? { ...it, captureThumb: res.card_image_path }
+                  : it,
+              ),
+            );
+            setPreviewHtmlCard((prev) =>
+              prev ? { ...prev, captureThumb: res.card_image_path } : prev,
+            );
+          }
+          setHtmlGenerating(false);
+        }}
+        onClose={() => {
+          setPreviewHtmlCard(null);
+          setHtmlGenerating(false);
+        }}
       />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -2882,6 +3058,7 @@ export default function App() {
 
       return {
         id: `o${index + 1}`,
+        productId: item.id ?? null,
         channel: channel,
         market: market,
         seller: item.mall_name || "알 수 없음",
@@ -2897,6 +3074,25 @@ export default function App() {
       };
     });
   }, [productsData]);
+
+  const handleGenerateImageOnDemand = async (productId) => {
+    const result = await generateCardImageOnDemand(productId);
+    if (result?.card_image_path) {
+      setProductsData((prev) => ({
+        ...prev,
+        data: (prev.data || []).map((it) =>
+          it.id === productId
+            ? {
+                ...it,
+                card_image_path: result.card_image_path,
+                image_url: result.card_image_path,
+              }
+            : it,
+        ),
+      }));
+    }
+    return result;
+  };
 
   // 범위/기준가 유효성 보정(입력 실수 방지)
   const safeSettings = useMemo(() => {
@@ -2987,6 +3183,7 @@ export default function App() {
                     onGoChannel={(channelKey) =>
                       setRoute({ page: "channel", channelKey, sellerName: "" })
                     }
+                    onGenerateImage={handleGenerateImageOnDemand}
                     data={data}
                     offers={offers}
                     mallsSummary={mallsSummary}
