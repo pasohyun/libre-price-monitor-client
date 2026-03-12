@@ -2951,22 +2951,10 @@ export default function App() {
             </HeaderNavButton>
           ))}
           <HeaderNavButton
-            active={location.pathname === "/report"}
-            onClick={() => navigate("/report")}
+            active={location.pathname === "/range-report"}
+            onClick={() => navigate("/range-report")}
           >
-            Monthly LLM Report
-          </Link>
-          <Link
-            to="/range-report"
-            className="rounded-xl px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-          >
-            Date Range Report
-          </Link>
-          <Link
-            to="/tracked-report"
-            className="rounded-xl px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-          >
-            {"Tracked Malls\nReport"}
+            {"Date Range\nReport"}
           </HeaderNavButton>
         </div>
       </div>
