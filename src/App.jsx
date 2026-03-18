@@ -1101,14 +1101,14 @@ const buildContinuousMallTrendData = (rows, mallNames = []) => {
   const normalized = rows
     .map((item) => {
       const x = item?.x || item?.date;
-      return x ? { ...item, x, time: item?.time || null } : null;
+      return x ? { ...item, x } : null;
     })
     .filter(Boolean)
     .sort((a, b) => {
-      // date + time 순으로 정렬
-      const keyA = a.x + (a.time || "");
-      const keyB = b.x + (b.time || "");
-      return keyA.localeCompare(keyB);
+      const da = parseDateLike(a.x);
+      const db = parseDateLike(b.x);
+      if (da && db) return da - db;
+      return String(a.x).localeCompare(String(b.x));
     });
 
   if (normalized.length === 0) return [];
@@ -1116,9 +1116,9 @@ const buildContinuousMallTrendData = (rows, mallNames = []) => {
   const malls =
     mallNames.length > 0
       ? mallNames
-      : Object.keys(normalized[0] || {}).filter((k) => k !== "x" && k !== "date" && k !== "time" && k !== "_index");
+      : Object.keys(normalized[0] || {}).filter((k) => k !== "x" && k !== "date");
 
-  const filled = normalized.map((row, idx) => ({ ...row, _index: idx }));
+  const filled = normalized.map((row) => ({ ...row }));
 
   malls.forEach((mall) => {
     const values = filled.map((row) => row[mall]);
@@ -1365,18 +1365,7 @@ function PriceTrend({ mode, data, malls = [], height = 240 }) {
           margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
         >
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis
-            dataKey="_index"
-            tick={{ fontSize: 12 }}
-            interval={0}
-            tickFormatter={(idx) => {
-              const point = data[idx];
-              if (!point) return "";
-              const prev = idx > 0 ? data[idx - 1] : null;
-              if (!prev || prev.x !== point.x) return point.x;
-              return "";
-            }}
-          />
+          <XAxis dataKey="x" tick={{ fontSize: 12 }} />
           <YAxis
             tick={{ fontSize: 12 }}
             domain={[75000, 100000]}
@@ -1384,13 +1373,13 @@ function PriceTrend({ mode, data, malls = [], height = 240 }) {
             tickFormatter={(value) => value.toLocaleString("ko-KR")}
           />
           <Tooltip
-            content={({ active, payload }) => {
+            content={({ active, payload, label }) => {
               if (!active || !payload || !payload.length) return null;
-              const d = payload[0]?.payload;
+
               return (
                 <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
                   <div className="mb-2 text-sm font-semibold text-slate-900">
-                    {d?.x}{d?.time ? ` ${d.time}` : ""}
+                    {label}
                   </div>
                   <div className="space-y-1">
                     {payload
