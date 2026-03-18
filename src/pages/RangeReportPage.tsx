@@ -75,7 +75,7 @@ export default function RangeReportPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<ReportData | null>(null);
-  const [modalData, setModalData] = useState<{ html: string; link?: string } | null>(null);
+  const [modalItem, setModalItem] = useState<any | null>(null);
 
   // 기준가 이하 리스트 필터
   const [filterQuantity, setFilterQuantity] = useState<number | "">("");
@@ -422,62 +422,38 @@ export default function RangeReportPage() {
                           });
                         };
 
-                        const renderCardCell = (item: any, key: string) => (
-                          <td style={{ padding: "8px 6px", borderBottom: "1px solid #f3f4f6" }}>
-                            {item?.card_html ? (
-                              <div
-                                onClick={() => setModalData({ html: item.card_html, link: item.link })}
-                                style={{
-                                  width: 80,
-                                  height: 60,
-                                  border: "1px solid #e5e7eb",
-                                  borderRadius: 6,
-                                  overflow: "hidden",
-                                  cursor: "pointer",
-                                  position: "relative",
-                                }}
-                              >
-                                <iframe
-                                  srcDoc={item.card_html}
+                        const renderCardCell = (item: any, key: string) => {
+                          const thumb = item?.image_url || item?.card_image_path;
+                          const hasData = item?.product_name || item?.unit_price;
+                          return (
+                            <td style={{ padding: "8px 6px", borderBottom: "1px solid #f3f4f6" }}>
+                              {(thumb || hasData) ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); setModalItem(item); }}
                                   style={{
-                                    width: "500%",
-                                    height: 500,
-                                    border: "none",
-                                    pointerEvents: "none",
-                                    transform: "scale(0.16)",
-                                    transformOrigin: "top left",
+                                    display: "inline-flex",
+                                    border: "1px solid #e5e7eb",
+                                    borderRadius: 6,
+                                    padding: 2,
+                                    background: "white",
+                                    cursor: "pointer",
                                   }}
-                                  sandbox="allow-same-origin"
-                                  title={`thumb-${key}`}
-                                />
-                                <div
-                                  style={{
-                                    position: "absolute",
-                                    inset: 0,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    background: "rgba(255,255,255,0.5)",
-                                    fontSize: 10,
-                                    color: "#374151",
-                                    opacity: 0,
-                                    transition: "opacity 0.15s",
-                                  }}
-                                  onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.opacity = "1"; }}
-                                  onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.opacity = "0"; }}
                                 >
-                                  크게 보기
-                                </div>
-                              </div>
-                            ) : item?.link ? (
-                              <a href={item.link} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>링크</a>
-                            ) : item?.card_image_path ? (
-                              <a href={`${API_BASE_URL}/${item.card_image_path}`} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>캡쳐본</a>
-                            ) : (
-                              "-"
-                            )}
-                          </td>
-                        );
+                                  <img
+                                    src={thumb || "/placeholder.png"}
+                                    alt="evidence"
+                                    style={{ width: 80, height: 48, objectFit: "cover", borderRadius: 4 }}
+                                  />
+                                </button>
+                              ) : item?.link ? (
+                                <a href={item.link} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>링크</a>
+                              ) : (
+                                "-"
+                              )}
+                            </td>
+                          );
+                        };
 
                         return (
                           <React.Fragment key={i}>
@@ -717,91 +693,75 @@ export default function RangeReportPage() {
 
         </div>
       )}
-      {/* Evidence 카드 모달 */}
-      {modalData && (
+      {/* Evidence 카드 모달 — 메인 HtmlCardModal과 동일한 UI */}
+      {modalItem && (
         <div
-          onClick={() => setModalData(null)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 50,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "rgba(0,0,0,0.6)",
-            padding: 16,
-            overflowY: "scroll",
-          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+          style={{ overflowY: "scroll" }}
+          onClick={() => setModalItem(null)}
         >
           <div
+            className="w-full max-w-5xl rounded-2xl bg-white p-4 shadow-2xl md:p-6"
             onClick={(e) => e.stopPropagation()}
-            style={{
-              width: 1040,
-              maxWidth: "95vw",
-              background: "white",
-              borderRadius: 16,
-              padding: 20,
-              display: "flex",
-              flexDirection: "column",
-            }}
           >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 12,
-                gap: 16,
-              }}
-            >
-              <div style={{ fontWeight: 700 }}>Evidence 카드</div>
-              <div style={{ display: "flex", gap: 8 }}>
-                {modalData.link && (
-                  <a
-                    href={modalData.link}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{
-                      border: "1px solid #111827",
-                      borderRadius: 8,
-                      padding: "4px 12px",
-                      fontSize: 13,
-                      background: "#111827",
-                      color: "white",
-                      textDecoration: "none",
-                    }}
-                  >
-                    원문 바로가기
-                  </a>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setModalData(null)}
-                  style={{
-                    border: "1px solid #d1d5db",
-                    borderRadius: 8,
-                    padding: "4px 12px",
-                    fontSize: 13,
-                    cursor: "pointer",
-                    background: "white",
-                  }}
-                >
-                  닫기
-                </button>
+            <div className="mb-4 flex items-center justify-between">
+              <div className="text-base font-semibold text-slate-900">HTML 카드 보기</div>
+              <button
+                type="button"
+                onClick={() => setModalItem(null)}
+                className="rounded-lg border border-slate-200 px-3 py-1 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                닫기
+              </button>
+            </div>
+
+            <div className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[300px_1fr]">
+              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                <img
+                  src={modalItem.image_url || modalItem.card_image_path || "/placeholder.png"}
+                  alt="evidence"
+                  className="h-full w-full object-contain"
+                />
+              </div>
+              <div className="space-y-3">
+                <div className="text-xl font-bold leading-snug text-slate-900">
+                  {modalItem.product_name || "-"}
+                </div>
+                <div className="text-sm text-slate-600">
+                  판매처: {modalItem.seller_name || "-"}
+                </div>
+                <div className="flex items-end gap-2">
+                  <span className="text-3xl font-extrabold text-slate-900">
+                    {Number(modalItem.unit_price || 0).toLocaleString("ko-KR")}
+                  </span>
+                  <span className="pb-1 text-base font-semibold text-slate-500">원/개</span>
+                </div>
+                <div className="grid grid-cols-[110px_1fr] gap-y-2 text-sm">
+                  <div className="text-slate-500">총 가격</div>
+                  <div className="font-semibold text-slate-900">
+                    {fmtMoney(modalItem.total_price)}
+                  </div>
+                  <div className="text-slate-500">수량</div>
+                  <div className="font-semibold text-slate-900">{modalItem.quantity || 0}개</div>
+                  <div className="text-slate-500">계산 방식</div>
+                  <div className="font-semibold text-slate-900">{modalItem.calc_method || "-"}</div>
+                  <div className="text-slate-500">생성 시각</div>
+                  <div className="font-semibold text-slate-900">{fmtTime(modalItem.time)}</div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 pt-2">
+                  {modalItem.link && (
+                    <a
+                      href={modalItem.link}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white no-underline hover:bg-slate-700"
+                    >
+                      원문 바로가기
+                    </a>
+                  )}
+                </div>
               </div>
             </div>
-            <iframe
-              srcDoc={modalData.html}
-              style={{
-                width: 1000,
-                maxWidth: "100%",
-                height: 560,
-                border: "none",
-                borderRadius: 8,
-              }}
-              sandbox="allow-same-origin allow-popups"
-              title="evidence-card-modal"
-            />
           </div>
         </div>
       )}
