@@ -2191,6 +2191,8 @@ function MainDashboard({
   mallsTop,
 }) {
   const [trendMode, setTrendMode] = useState("daily"); // daily/monthly
+  const [previewHtmlCard, setPreviewHtmlCard] = useState(null);
+  const [htmlGenerating, setHtmlGenerating] = useState(false);
   const [manualModalOpen, setManualModalOpen] = useState(false);
   const [manualTarget, setManualTarget] = useState(null);
   const [manualQtyInput, setManualQtyInput] = useState("");
@@ -2371,10 +2373,9 @@ function MainDashboard({
       key: "captureThumb",
       header: "사이트 화면",
       render: (r) => (
-        <a
-          href={r.url || "#"}
-          target="_blank"
-          rel="noreferrer"
+        <button
+          type="button"
+          onClick={() => setPreviewHtmlCard(r)}
           className="inline-flex rounded-md border border-slate-200 bg-white p-1 hover:bg-slate-50"
         >
           <img
@@ -2383,7 +2384,7 @@ function MainDashboard({
             className="h-12 w-16 rounded object-cover"
             loading="lazy"
           />
-        </a>
+        </button>
       ),
     },
   ];
@@ -2419,6 +2420,32 @@ function MainDashboard({
           setManualModalOpen(false);
           setManualTarget(null);
           setManualQtyInput("");
+        }}
+      />
+      <HtmlCardModal
+        open={!!previewHtmlCard}
+        row={previewHtmlCard}
+        sellerName={
+          previewHtmlCard
+            ? displaySellerName(
+                previewHtmlCard.channel,
+                previewHtmlCard.seller || "-",
+              )
+            : "-"
+        }
+        generatingImage={htmlGenerating}
+        onGenerateImage={async () => {
+          if (!previewHtmlCard?.productId) return;
+          setHtmlGenerating(true);
+          const res = await onGenerateImage(previewHtmlCard.productId);
+          if (!res?.card_image_path && res?.message) {
+            window.alert(`이미지 생성 실패: ${res.message}`);
+          }
+          setHtmlGenerating(false);
+        }}
+        onClose={() => {
+          setPreviewHtmlCard(null);
+          setHtmlGenerating(false);
         }}
       />
       <div className="grid grid-cols-12 gap-4">
