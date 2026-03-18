@@ -3312,13 +3312,25 @@ export default function App() {
       setSettings((prev) => ({ ...prev, threshold: config.target_price }));
     }
 
-    const [products, summary, trends, top] = await Promise.all([
+    const [products, coupangProducts, summary, trends, top] = await Promise.all([
       fetchLatestProducts(),
+      fetchLatestProducts("coupang"),
       fetchTrackedMallsSummary(),
       fetchTrackedMallsTrends(90),
       fetchMallsTop(10),
     ]);
-    setProductsData(products);
+    // naver(기본) + coupang 데이터를 합쳐서 저장
+    const mergedProducts = {
+      ...products,
+      data: [
+        ...(products.data || []),
+        ...(coupangProducts.data || []).filter(
+          (cp) => !(products.data || []).some((p) => p.id === cp.id),
+        ),
+      ],
+    };
+    mergedProducts.count = mergedProducts.data.length;
+    setProductsData(mergedProducts);
     setMallsSummary(summary);
     setMallsTrends(trends);
     setMallsTop(top);
@@ -3471,18 +3483,20 @@ export default function App() {
     }
 
     return productsData.data.map((item, index) => {
-      // mall_name 기반 채널 자동 분류 (백엔드가 모든 상품에 channel: "naver"를 붙이므로)
       const mallName = (item.mall_name || "").trim();
-      let channel = "naver";
-      if (mallName === "쿠팡" || (item.link || "").includes("coupang")) {
-        channel = "coupang";
-      } else if (
-        ["11번가", "G마켓", "옥션", "롯데몰"].includes(mallName) ||
-        (item.link || "").includes("gmarket") ||
-        (item.link || "").includes("auction") ||
-        (item.link || "").includes("11st")
-      ) {
-        channel = "others";
+      // 백엔드 channel 필드 우선 사용, 없으면 mall_name 기반 분류
+      let channel = item.channel || "naver";
+      if (!item.channel || item.channel === "naver") {
+        if (mallName === "쿠팡" || (item.link || "").includes("coupang")) {
+          channel = "coupang";
+        } else if (
+          ["11번가", "G마켓", "옥션", "롯데몰"].includes(mallName) ||
+          (item.link || "").includes("gmarket") ||
+          (item.link || "").includes("auction") ||
+          (item.link || "").includes("11st")
+        ) {
+          channel = "others";
+        }
       }
       const market =
         mallName === "쿠팡"
@@ -3527,9 +3541,22 @@ export default function App() {
         ),
       }));
       // 서버 저장 결과를 다시 읽어와 새로고침 후에도 동일하게 보이도록 동기화
-      const latest = await fetchLatestProducts();
+      const [latest, latestCoupang] = await Promise.all([
+        fetchLatestProducts(),
+        fetchLatestProducts("coupang"),
+      ]);
       if (latest?.data) {
-        setProductsData(latest);
+        const merged = {
+          ...latest,
+          data: [
+            ...(latest.data || []),
+            ...(latestCoupang?.data || []).filter(
+              (cp) => !(latest.data || []).some((p) => p.id === cp.id),
+            ),
+          ],
+        };
+        merged.count = merged.data.length;
+        setProductsData(merged);
       }
     } else if (result?.message) {
       window.alert(`이미지 생성 실패: ${result.message}`);
@@ -3540,8 +3567,23 @@ export default function App() {
   const handleManualConfirmQuantity = async (productId, quantity) => {
     const result = await confirmManualQuantity(productId, quantity);
     if (result?.updated) {
-      const latest = await fetchLatestProducts();
-      if (latest?.data) setProductsData(latest);
+      const [latest, latestCoupang] = await Promise.all([
+        fetchLatestProducts(),
+        fetchLatestProducts("coupang"),
+      ]);
+      if (latest?.data) {
+        const merged = {
+          ...latest,
+          data: [
+            ...(latest.data || []),
+            ...(latestCoupang?.data || []).filter(
+              (cp) => !(latest.data || []).some((p) => p.id === cp.id),
+            ),
+          ],
+        };
+        merged.count = merged.data.length;
+        setProductsData(merged);
+      }
     }
     return result;
   };
