@@ -1,8 +1,9 @@
 // src/pages/RangeReportPage.tsx
 import React, { useState } from "react";
 import {
-  LineChart,
+  ComposedChart,
   Line,
+  Scatter,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -644,58 +645,81 @@ export default function RangeReportPage() {
                             >
                               일별 최저가 추이
                             </div>
-                            <ResponsiveContainer width="100%" height={200}>
-                              <LineChart
-                                data={c.chart_data.map((p: any, idx: number) => ({
-                                  ...p,
-                                  _index: idx,
-                                  _label: p.time ? `${p.date} ${p.time}` : p.date,
-                                }))}
-                              >
-                                <CartesianGrid
-                                  strokeDasharray="3 3"
-                                  stroke="#e5e7eb"
-                                />
-                                <XAxis
-                                  dataKey="_index"
-                                  tick={{ fontSize: 11 }}
-                                  tickFormatter={(idx: number) => {
-                                    const point = c.chart_data[idx];
-                                    if (!point) return "";
-                                    // 각 날짜의 첫 포인트에만 날짜 라벨 표시
-                                    const prev = idx > 0 ? c.chart_data[idx - 1] : null;
-                                    if (!prev || prev.date !== point.date) return point.date.replace(/^\d{2}/, "");
-                                    return "";
-                                  }}
-                                  interval={0}
-                                />
-                                <YAxis
-                                  tick={{ fontSize: 11 }}
-                                  tickFormatter={(v: number) =>
-                                    `${(v / 1000).toFixed(0)}k`
-                                  }
-                                  domain={["dataMin - 1000", "dataMax + 1000"]}
-                                />
-                                <Tooltip
-                                  labelFormatter={(idx: number) => {
-                                    const point = c.chart_data[idx];
-                                    return point ? (point.time ? `${point.date} ${point.time}` : point.date) : "";
-                                  }}
-                                  formatter={(v: number) => [
-                                    fmtMoney(v),
-                                    "최저 단가",
-                                  ]}
-                                />
-                                <Line
-                                  type="monotone"
-                                  dataKey="min_price"
-                                  stroke="#2563eb"
-                                  strokeWidth={2}
-                                  dot={{ r: 2 }}
-                                  activeDot={{ r: 4 }}
-                                />
-                              </LineChart>
-                            </ResponsiveContainer>
+                            {(() => {
+                              // chart_data를 min_price 라인용 + other_prices scatter용으로 가공
+                              const chartItems = c.chart_data.map((p: any, idx: number) => ({
+                                ...p,
+                                _index: idx,
+                              }));
+                              // other_prices를 개별 포인트로 풀기
+                              const scatterPoints: any[] = [];
+                              c.chart_data.forEach((p: any, idx: number) => {
+                                if (Array.isArray(p.other_prices)) {
+                                  p.other_prices.forEach((op: number) => {
+                                    scatterPoints.push({ _index: idx, other_price: op, date: p.date, time: p.time });
+                                  });
+                                }
+                              });
+
+                              return (
+                                <ResponsiveContainer width="100%" height={200}>
+                                  <ComposedChart data={chartItems}>
+                                    <CartesianGrid
+                                      strokeDasharray="3 3"
+                                      stroke="#e5e7eb"
+                                    />
+                                    <XAxis
+                                      dataKey="_index"
+                                      tick={{ fontSize: 11 }}
+                                      tickFormatter={(idx: number) => {
+                                        const point = c.chart_data[idx];
+                                        if (!point) return "";
+                                        const prev = idx > 0 ? c.chart_data[idx - 1] : null;
+                                        if (!prev || prev.date !== point.date) return point.date.replace(/^\d{2}/, "");
+                                        return "";
+                                      }}
+                                      interval={0}
+                                      type="number"
+                                      domain={[0, chartItems.length - 1]}
+                                    />
+                                    <YAxis
+                                      tick={{ fontSize: 11 }}
+                                      tickFormatter={(v: number) =>
+                                        `${(v / 1000).toFixed(0)}k`
+                                      }
+                                      domain={["dataMin - 1000", "dataMax + 1000"]}
+                                    />
+                                    <Tooltip
+                                      labelFormatter={(idx: number) => {
+                                        const point = c.chart_data[Math.round(idx)];
+                                        return point ? (point.time ? `${point.date} ${point.time}` : point.date) : "";
+                                      }}
+                                      formatter={(v: number, name: string) => [
+                                        fmtMoney(v),
+                                        name === "min_price" ? "최저가" : "기타 상품",
+                                      ]}
+                                    />
+                                    <Line
+                                      type="monotone"
+                                      dataKey="min_price"
+                                      stroke="#2563eb"
+                                      strokeWidth={2}
+                                      dot={{ r: 2 }}
+                                      activeDot={{ r: 4 }}
+                                    />
+                                    {scatterPoints.length > 0 && (
+                                      <Scatter
+                                        data={scatterPoints}
+                                        dataKey="other_price"
+                                        fill="#2563eb"
+                                        fillOpacity={0.25}
+                                        r={3}
+                                      />
+                                    )}
+                                  </ComposedChart>
+                                </ResponsiveContainer>
+                              );
+                            })()}
 
                             {/* 기준가 라인 표시 */}
                             <div
@@ -738,15 +762,13 @@ export default function RangeReportPage() {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              width: "fit-content",
-              maxWidth: "90vw",
-              maxHeight: "90vh",
+              width: 1040,
+              maxWidth: "95vw",
               background: "white",
               borderRadius: 16,
               padding: 20,
               display: "flex",
               flexDirection: "column",
-              overflow: "auto",
             }}
           >
             <div
@@ -797,7 +819,8 @@ export default function RangeReportPage() {
             <iframe
               srcDoc={modalData.html}
               style={{
-                width: "100%",
+                width: 1000,
+                maxWidth: "100%",
                 height: 560,
                 border: "none",
                 borderRadius: 8,
