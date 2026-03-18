@@ -1167,10 +1167,24 @@ const clampNumber = (v, min, max) => {
 };
 
 const channelLabel = (key) => CHANNELS.find((c) => c.key === key)?.label ?? key;
+const SELLER_DISPLAY_ALIASES = {
+  글루어트: "글리코핏",
+  무화당: "닥다몰",
+};
+const SELLER_DB_ALIASES = {
+  글리코핏: "글루어트",
+  닥다몰: "무화당",
+};
+const getSellerDisplayAlias = (name) =>
+  SELLER_DISPLAY_ALIASES[String(name || "").trim()] || String(name || "").trim();
+const getSellerDataKeys = (displayName) => {
+  const legacyName = SELLER_DB_ALIASES[displayName];
+  return legacyName ? [displayName, legacyName] : [displayName];
+};
 const displaySellerName = (channel, sellerName) => {
   const name = String(sellerName || "").trim();
   if (channel === "naver" && name === "네이버") return "최저가비교";
-  return name || "알 수 없음";
+  return getSellerDisplayAlias(name) || "알 수 없음";
 };
 
 // -----------------------------
@@ -1437,7 +1451,7 @@ function PriceTrend({ mode, data, malls = [], height = 240 }) {
               key={mall}
               type="monotone"
               dataKey={mall}
-              name={mall}
+              name={getSellerDisplayAlias(mall)}
               stroke={mallColors[index % mallColors.length]}
               strokeWidth={2}
               dot={false}
@@ -3327,11 +3341,27 @@ export default function App() {
   const data = useMemo(() => {
     // API 데이터가 있으면 사용, 없으면 Mock 데이터
     if (mallsTrends.data && mallsTrends.data.length > 0) {
-      const mallNames = mallsTrends.malls || [];
-      // API 데이터를 그래프 형식으로 변환
+      const mallNamesFromApi = mallsTrends.malls || [];
+      const mallNamesResolved =
+        mallNamesFromApi.length > 0
+          ? mallNamesFromApi
+          : Object.keys(mallsTrends.data[0] || {}).filter(
+              (k) => k !== "x" && k !== "date",
+            );
+      const mallNames = Array.from(
+        new Set(mallNamesResolved.map((name) => getSellerDisplayAlias(name))),
+      );
+
+      // API 데이터를 그래프 형식으로 변환 (구이름/신이름 키 모두 대응)
       const daily = mallsTrends.data.map((item) => {
         const dateKey = item.x || item.date;
-        return { x: dateKey, ...item };
+        const normalized = { x: dateKey };
+        mallNames.forEach((mall) => {
+          const keys = getSellerDataKeys(mall);
+          const value = keys.map((k) => item[k]).find((v) => v != null);
+          if (value != null) normalized[mall] = value;
+        });
+        return normalized;
       });
 
       // 일별 데이터에서 월별 데이터 자동 집계 (월별 최저가)
