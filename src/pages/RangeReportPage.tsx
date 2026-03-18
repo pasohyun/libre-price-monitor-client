@@ -498,15 +498,29 @@ export default function RangeReportPage() {
                               일별 최저가 추이
                             </div>
                             <ResponsiveContainer width="100%" height={200}>
-                              <LineChart data={c.chart_data}>
+                              <LineChart
+                                data={c.chart_data.map((p: any, idx: number) => ({
+                                  ...p,
+                                  _index: idx,
+                                  _label: p.time ? `${p.date} ${p.time}` : p.date,
+                                }))}
+                              >
                                 <CartesianGrid
                                   strokeDasharray="3 3"
                                   stroke="#e5e7eb"
                                 />
                                 <XAxis
-                                  dataKey="date"
+                                  dataKey="_index"
                                   tick={{ fontSize: 11 }}
-                                  interval="preserveStartEnd"
+                                  tickFormatter={(idx: number) => {
+                                    const point = c.chart_data[idx];
+                                    if (!point) return "";
+                                    // 각 날짜의 첫 포인트에만 날짜 라벨 표시
+                                    const prev = idx > 0 ? c.chart_data[idx - 1] : null;
+                                    if (!prev || prev.date !== point.date) return point.date;
+                                    return "";
+                                  }}
+                                  interval={0}
                                 />
                                 <YAxis
                                   tick={{ fontSize: 11 }}
@@ -516,6 +530,10 @@ export default function RangeReportPage() {
                                   domain={["dataMin - 1000", "dataMax + 1000"]}
                                 />
                                 <Tooltip
+                                  labelFormatter={(idx: number) => {
+                                    const point = c.chart_data[idx];
+                                    return point ? (point.time ? `${point.date} ${point.time}` : point.date) : "";
+                                  }}
                                   formatter={(v: number) => [
                                     fmtMoney(v),
                                     "최저 단가",
@@ -526,8 +544,8 @@ export default function RangeReportPage() {
                                   dataKey="min_price"
                                   stroke="#2563eb"
                                   strokeWidth={2}
-                                  dot={{ r: 3 }}
-                                  activeDot={{ r: 5 }}
+                                  dot={{ r: 2 }}
+                                  activeDot={{ r: 4 }}
                                 />
                               </LineChart>
                             </ResponsiveContainer>
