@@ -1101,14 +1101,14 @@ const buildContinuousMallTrendData = (rows, mallNames = []) => {
   const normalized = rows
     .map((item) => {
       const x = item?.x || item?.date;
-      return x ? { ...item, x } : null;
+      return x ? { ...item, x, time: item?.time || null } : null;
     })
     .filter(Boolean)
     .sort((a, b) => {
-      const da = parseDateLike(a.x);
-      const db = parseDateLike(b.x);
-      if (da && db) return da - db;
-      return String(a.x).localeCompare(String(b.x));
+      // date + time 순으로 정렬
+      const keyA = a.x + (a.time || "");
+      const keyB = b.x + (b.time || "");
+      return keyA.localeCompare(keyB);
     });
 
   if (normalized.length === 0) return [];
@@ -1116,9 +1116,9 @@ const buildContinuousMallTrendData = (rows, mallNames = []) => {
   const malls =
     mallNames.length > 0
       ? mallNames
-      : Object.keys(normalized[0] || {}).filter((k) => k !== "x" && k !== "date");
+      : Object.keys(normalized[0] || {}).filter((k) => k !== "x" && k !== "date" && k !== "time" && k !== "_index");
 
-  const filled = normalized.map((row) => ({ ...row }));
+  const filled = normalized.map((row, idx) => ({ ...row, _index: idx }));
 
   malls.forEach((mall) => {
     const values = filled.map((row) => row[mall]);
@@ -1365,7 +1365,18 @@ function PriceTrend({ mode, data, malls = [], height = 240 }) {
           margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
         >
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="x" tick={{ fontSize: 12 }} />
+          <XAxis
+            dataKey="_index"
+            tick={{ fontSize: 12 }}
+            interval={0}
+            tickFormatter={(idx) => {
+              const point = data[idx];
+              if (!point) return "";
+              const prev = idx > 0 ? data[idx - 1] : null;
+              if (!prev || prev.x !== point.x) return point.x;
+              return "";
+            }}
+          />
           <YAxis
             tick={{ fontSize: 12 }}
             domain={[75000, 100000]}
@@ -1373,13 +1384,13 @@ function PriceTrend({ mode, data, malls = [], height = 240 }) {
             tickFormatter={(value) => value.toLocaleString("ko-KR")}
           />
           <Tooltip
-            content={({ active, payload, label }) => {
+            content={({ active, payload }) => {
               if (!active || !payload || !payload.length) return null;
-
+              const d = payload[0]?.payload;
               return (
                 <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
                   <div className="mb-2 text-sm font-semibold text-slate-900">
-                    {label}
+                    {d?.x}{d?.time ? ` ${d.time}` : ""}
                   </div>
                   <div className="space-y-1">
                     {payload
@@ -1633,39 +1644,33 @@ function SingleSellerPriceTrend({ mode, timeline, sellerName, height = 240 }) {
     if (!timeline || timeline.length === 0) return [];
 
     if (mode === "daily") {
-      // 일별 데이터: capturedAt을 날짜별로 그룹화하고 평균 계산
-      const dailyMap = {};
-      timeline.forEach((item) => {
-        const date = parseDateLike(item.capturedAt);
-        if (!date) return;
-        const dateKey = `${String(date.getMonth() + 1).padStart(
-          2,
-          "0",
-        )}/${String(date.getDate()).padStart(2, "0")}`;
-
-        if (!dailyMap[dateKey]) {
-          dailyMap[dateKey] = [];
-        }
-        dailyMap[dateKey].push(item.unitPrice);
-      });
-
-      const allDates = Object.keys(dailyMap)
-        .map((dateKey) => {
-          // 날짜 문자열을 Date 객체로 변환하여 정렬
-          const [month, day] = dateKey.split("/").map(Number);
-          return { dateKey, date: new Date(2025, month - 1, day) };
+      // 크롤링 시점별 개별 포인트 표시
+      const points = timeline
+        .map((item) => {
+          const date = parseDateLike(item.capturedAt);
+          if (!date) return null;
+          const dateKey = `${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}`;
+          const timeKey = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+          return {
+            _ts: date.getTime(),
+            dateKey,
+            timeKey,
+            price: item.unitPrice,
+          };
         })
-        .sort((a, b) => a.date - b.date);
+        .filter(Boolean)
+        .sort((a, b) => a._ts - b._ts);
 
-      // 최근 7일만 선택
-      const recent7Days = allDates.slice(-7);
+      // 최근 7일분만
+      const uniqueDates = [...new Set(points.map((p) => p.dateKey))];
+      const recent7 = new Set(uniqueDates.slice(-7));
+      const filtered = points.filter((p) => recent7.has(p.dateKey));
 
-      return recent7Days.map(({ dateKey }) => ({
-        x: dateKey,
-        price: Math.round(
-          dailyMap[dateKey].reduce((a, b) => a + b, 0) /
-            dailyMap[dateKey].length,
-        ),
+      return filtered.map((p, idx) => ({
+        _index: idx,
+        x: p.dateKey,
+        time: p.timeKey,
+        price: p.price,
       }));
     } else {
       // 월별 데이터: capturedAt을 월별로 그룹화하고 평균 계산
@@ -1773,7 +1778,20 @@ function SingleSellerPriceTrend({ mode, timeline, sellerName, height = 240 }) {
           margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
         >
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="x" tick={{ fontSize: 12 }} />
+          <XAxis
+            dataKey={mode === "daily" ? "_index" : "x"}
+            tick={{ fontSize: 12 }}
+            {...(mode === "daily" ? {
+              interval: 0,
+              tickFormatter: (idx) => {
+                const point = chartData[idx];
+                if (!point) return "";
+                const prev = idx > 0 ? chartData[idx - 1] : null;
+                if (!prev || prev.x !== point.x) return point.x;
+                return "";
+              },
+            } : {})}
+          />
           <YAxis
             tick={{ fontSize: 12 }}
             domain={yAxisConfig.domain}
@@ -1791,13 +1809,13 @@ function SingleSellerPriceTrend({ mode, timeline, sellerName, height = 240 }) {
             />
           ))}
           <Tooltip
-            content={({ active, payload, label }) => {
+            content={({ active, payload }) => {
               if (!active || !payload || !payload.length) return null;
-
+              const d = payload[0].payload;
               return (
                 <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
                   <div className="mb-2 text-sm font-semibold text-slate-900">
-                    {label}
+                    {d.x}{d.time ? ` ${d.time}` : ""}
                   </div>
                   <div className="flex items-center justify-between gap-4 text-sm">
                     <span className="text-slate-600">{sellerName}</span>
@@ -1815,7 +1833,8 @@ function SingleSellerPriceTrend({ mode, timeline, sellerName, height = 240 }) {
             name={sellerName}
             stroke="#10b981"
             strokeWidth={2}
-            dot={false}
+            dot={{ r: 2 }}
+            activeDot={{ r: 4 }}
           />
         </LineChart>
       </ResponsiveContainer>
