@@ -243,7 +243,7 @@ const SAMPLE_SELLER_DAILY_DATA = {
       { x: "11/05", price: 85000 },
       { x: "11/06", price: 85200 },
     ],
-    무화당: [
+    닥다몰: [
       { x: "11/01", price: 89000 },
       { x: "11/02", price: 88800 },
       { x: "11/03", price: 88500 },
@@ -259,7 +259,7 @@ const SAMPLE_SELLER_DAILY_DATA = {
       { x: "11/05", price: 89800 },
       { x: "11/06", price: 90000 },
     ],
-    글루어트: [
+    글리코핏: [
       { x: "11/01", price: 87500 },
       { x: "11/02", price: 87200 },
       { x: "11/03", price: 87000 },
@@ -331,7 +331,7 @@ const SAMPLE_SELLER_MONTHLY_DATA = {
       { x: "10월", price: 84800 },
       { x: "11월", price: 84900 },
     ],
-    무화당: [
+    닥다몰: [
       { x: "6월", price: 89000 },
       { x: "9월", price: 88800 },
       { x: "10월", price: 88600 },
@@ -343,7 +343,7 @@ const SAMPLE_SELLER_MONTHLY_DATA = {
       { x: "10월", price: 90000 },
       { x: "11월", price: 90100 },
     ],
-    글루어트: [
+    글리코핏: [
       { x: "6월", price: 87500 },
       { x: "9월", price: 87300 },
       { x: "10월", price: 87200 },
@@ -3373,10 +3373,36 @@ export default function App() {
 
       return { daily, monthly, malls: mallNames };
     }
+
+    // tracked-malls API가 비어 있을 때도 기존 네이버 4개 판매처 그래프를 기본 표시한다.
+    const fallbackMalls = ["글리코핏", "레디투힐", "메디프라", "닥다몰"];
+    const toSellerChartData = (sourceByMall) => {
+      const xOrder = [];
+      const seenX = new Set();
+
+      fallbackMalls.forEach((mall) => {
+        (sourceByMall[mall] || []).forEach((point) => {
+          const x = point?.x;
+          if (!x || seenX.has(x)) return;
+          seenX.add(x);
+          xOrder.push(x);
+        });
+      });
+
+      return xOrder.map((x) => {
+        const row = { x };
+        fallbackMalls.forEach((mall) => {
+          const point = (sourceByMall[mall] || []).find((p) => p.x === x);
+          row[mall] = point ? point.price : null;
+        });
+        return row;
+      });
+    };
+
     return {
-      daily: SAMPLE_DAILY_POINTS,
-      monthly: SAMPLE_MONTHLY_POINTS,
-      malls: [],
+      daily: toSellerChartData(SAMPLE_SELLER_DAILY_DATA.naver || {}),
+      monthly: toSellerChartData(SAMPLE_SELLER_MONTHLY_DATA.naver || {}),
+      malls: fallbackMalls,
     };
   }, [mallsTrends]);
 
