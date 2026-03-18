@@ -73,6 +73,7 @@ export default function RangeReportPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<ReportData | null>(null);
+  const [modalHtml, setModalHtml] = useState<string | null>(null);
 
 
   const onFetch = async () => {
@@ -354,25 +355,51 @@ export default function RangeReportPage() {
                         </div>
                       </div>
 
-                      {/* Evidence 카드 HTML */}
+                      {/* Evidence 카드 썸네일 */}
                       {r?.card_html ? (
                         <div
+                          onClick={() => setModalHtml(r.card_html)}
                           style={{
                             border: "1px solid #e5e7eb",
                             borderRadius: 8,
                             overflow: "hidden",
+                            cursor: "pointer",
+                            maxHeight: 120,
+                            position: "relative",
                           }}
                         >
                           <iframe
                             srcDoc={r.card_html}
                             style={{
                               width: "100%",
-                              minHeight: 300,
+                              height: 300,
                               border: "none",
+                              pointerEvents: "none",
+                              transform: "scale(0.4)",
+                              transformOrigin: "top left",
+                              width: "250%",
                             }}
                             sandbox="allow-same-origin"
-                            title={`evidence-card-${i}`}
+                            title={`evidence-thumb-${i}`}
                           />
+                          <div
+                            style={{
+                              position: "absolute",
+                              bottom: 0,
+                              left: 0,
+                              right: 0,
+                              height: 32,
+                              background: "linear-gradient(transparent, white)",
+                              display: "flex",
+                              alignItems: "flex-end",
+                              justifyContent: "center",
+                              paddingBottom: 6,
+                              fontSize: 11,
+                              color: "#6b7280",
+                            }}
+                          >
+                            클릭하여 크게 보기
+                          </div>
                         </div>
                       ) : r?.link ? (
                         <a href={r.link} target="_blank" rel="noreferrer">
@@ -535,6 +562,72 @@ export default function RangeReportPage() {
             </div>
           </div>
 
+        </div>
+      )}
+      {/* Evidence 카드 모달 */}
+      {modalHtml && (
+        <div
+          onClick={() => setModalHtml(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 50,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(0,0,0,0.6)",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "90vw",
+              maxWidth: 900,
+              maxHeight: "90vh",
+              background: "white",
+              borderRadius: 16,
+              padding: 16,
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 12,
+              }}
+            >
+              <div style={{ fontWeight: 700 }}>Evidence 카드</div>
+              <button
+                type="button"
+                onClick={() => setModalHtml(null)}
+                style={{
+                  border: "1px solid #d1d5db",
+                  borderRadius: 8,
+                  padding: "4px 12px",
+                  fontSize: 13,
+                  cursor: "pointer",
+                  background: "white",
+                }}
+              >
+                닫기
+              </button>
+            </div>
+            <iframe
+              srcDoc={modalHtml}
+              style={{
+                width: "100%",
+                flex: 1,
+                minHeight: 500,
+                border: "none",
+                borderRadius: 8,
+              }}
+              sandbox="allow-same-origin"
+              title="evidence-card-modal"
+            />
+          </div>
         </div>
       )}
     </div>
