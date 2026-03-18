@@ -259,7 +259,7 @@ const SAMPLE_SELLER_DAILY_DATA = {
       { x: "11/05", price: 89800 },
       { x: "11/06", price: 90000 },
     ],
-    글리코핏: [
+    글루코핏: [
       { x: "11/01", price: 87500 },
       { x: "11/02", price: 87200 },
       { x: "11/03", price: 87000 },
@@ -343,7 +343,7 @@ const SAMPLE_SELLER_MONTHLY_DATA = {
       { x: "10월", price: 90000 },
       { x: "11월", price: 90100 },
     ],
-    글리코핏: [
+    글루코핏: [
       { x: "6월", price: 87500 },
       { x: "9월", price: 87300 },
       { x: "10월", price: 87200 },
@@ -1168,11 +1168,11 @@ const clampNumber = (v, min, max) => {
 
 const channelLabel = (key) => CHANNELS.find((c) => c.key === key)?.label ?? key;
 const SELLER_DISPLAY_ALIASES = {
-  글루어트: "글리코핏",
+  글루어트: "글루코핏",
   무화당: "닥다몰",
 };
 const SELLER_DB_ALIASES = {
-  글리코핏: "글루어트",
+  글루코핏: "글루어트",
   닥다몰: "무화당",
 };
 const getSellerDisplayAlias = (name) =>
@@ -3405,7 +3405,7 @@ export default function App() {
     }
 
     // tracked-malls API가 비어 있을 때도 기존 네이버 4개 판매처 그래프를 기본 표시한다.
-    const fallbackMalls = ["글리코핏", "레디투힐", "메디프라", "닥다몰"];
+    const fallbackMalls = ["글루코핏", "레디투힐", "메디프라", "닥다몰"];
     const toSellerChartData = (sourceByMall) => {
       const xOrder = [];
       const seenX = new Set();
