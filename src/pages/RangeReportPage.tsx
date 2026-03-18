@@ -79,6 +79,7 @@ export default function RangeReportPage() {
 
   // 기준가 이하 리스트 필터
   const [filterQuantity, setFilterQuantity] = useState<number | "">("");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
 
   const onFetch = async () => {
@@ -113,7 +114,11 @@ export default function RangeReportPage() {
       if (filterQuantity !== "" && (r?.quantity ?? 0) !== filterQuantity) return false;
       return true;
     })
-    .sort((a: any, b: any) => (b?.unit_price ?? 0) - (a?.unit_price ?? 0));
+    .sort((a: any, b: any) =>
+      sortOrder === "asc"
+        ? (a?.unit_price ?? 0) - (b?.unit_price ?? 0)
+        : (b?.unit_price ?? 0) - (a?.unit_price ?? 0),
+    );
 
   const sellerCards: any[] = Array.isArray(data?.seller_cards)
     ? data.seller_cards
@@ -363,8 +368,19 @@ export default function RangeReportPage() {
                     ))}
                   </select>
                 </div>
+                <div>
+                  <label style={{ fontSize: 11, color: "#6b7280" }}>단가 정렬</label>
+                  <select
+                    value={sortOrder}
+                    onChange={(e) => setSortOrder(e.target.value as "asc" | "desc")}
+                    style={{ ...inputStyle, width: 100, padding: 6, fontSize: 13 }}
+                  >
+                    <option value="asc">오름차순</option>
+                    <option value="desc">내림차순</option>
+                  </select>
+                </div>
                 <div style={{ fontSize: 12, color: "#6b7280", paddingBottom: 4 }}>
-                  {belowList.length}건 / {belowListRaw.length}건 (단가 내림차순)
+                  {belowList.length}건 / {belowListRaw.length}건
                 </div>
               </div>
 
