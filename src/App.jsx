@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import "./App.css";
 import Report from "./Report.jsx";
 import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
@@ -39,10 +39,10 @@ const MEDICAL_DEVICE_BASE_URL = "https://2d.daewoong.co.kr/frame/index.do";
 
 async function fetchLatestProducts() {
   try {
-    let response = await fetch(`${API_BASE}/products/today`);
+    let response = await fetch(`${API_BASE}/products/latest`);
     if (response.status === 404) {
       // Backward compatibility for older backend deployments
-      response = await fetch(`${API_BASE}/products/latest`);
+      response = await fetch(`${API_BASE}/products/today`);
     }
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`);
@@ -1093,6 +1093,57 @@ const parseDateLike = (v) => {
   const d = new Date(normalized);
   if (Number.isNaN(d.getTime())) return null;
   return d;
+};
+
+const buildContinuousMallTrendData = (rows, mallNames = []) => {
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+
+  const normalized = rows
+    .map((item) => {
+      const x = item?.x || item?.date;
+      return x ? { ...item, x } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => {
+      const da = parseDateLike(a.x);
+      const db = parseDateLike(b.x);
+      if (da && db) return da - db;
+      return String(a.x).localeCompare(String(b.x));
+    });
+
+  if (normalized.length === 0) return [];
+
+  const malls =
+    mallNames.length > 0
+      ? mallNames
+      : Object.keys(normalized[0] || {}).filter((k) => k !== "x" && k !== "date");
+
+  const filled = normalized.map((row) => ({ ...row }));
+
+  malls.forEach((mall) => {
+    const values = filled.map((row) => row[mall]);
+    const firstKnownIdx = values.findIndex(
+      (v) => typeof v === "number" && !Number.isNaN(v),
+    );
+    if (firstKnownIdx < 0) return;
+
+    const firstValue = values[firstKnownIdx];
+    for (let i = 0; i < firstKnownIdx; i += 1) {
+      filled[i][mall] = firstValue;
+    }
+
+    let prev = firstValue;
+    for (let i = firstKnownIdx + 1; i < filled.length; i += 1) {
+      const cur = filled[i][mall];
+      if (typeof cur === "number" && !Number.isNaN(cur)) {
+        prev = cur;
+      } else {
+        filled[i][mall] = prev;
+      }
+    }
+  });
+
+  return filled;
 };
 
 const formatDateTimeKST = (v) => {
@@ -2147,6 +2198,8 @@ function MainDashboard({
   const [manualQtyInput, setManualQtyInput] = useState("");
   const [manualSubmitting, setManualSubmitting] = useState(false);
   const [channelFilter, setChannelFilter] = useState("all"); // all | naver | coupang | others
+  const [offersPage, setOffersPage] = useState(1);
+  const OFFERS_PER_PAGE = 20;
 
   const filteredOffers = useMemo(() => {
     const thr = Number.isFinite(safeSettings.threshold)
@@ -2158,6 +2211,39 @@ function MainDashboard({
       .filter((o) => o.unitPrice <= thr)
       .map((o) => ({ ...o, __rowKey: o.id }));
   }, [offers, safeSettings, channelFilter]);
+
+  const totalOffersPages = Math.max(
+    1,
+    Math.ceil(filteredOffers.length / OFFERS_PER_PAGE),
+  );
+
+  const pagedOffers = useMemo(() => {
+    const start = (offersPage - 1) * OFFERS_PER_PAGE;
+    return filteredOffers.slice(start, start + OFFERS_PER_PAGE);
+  }, [filteredOffers, offersPage]);
+
+  const pageNumbers = useMemo(() => {
+    const maxVisible = 7;
+    if (totalOffersPages <= maxVisible) {
+      return Array.from({ length: totalOffersPages }, (_, i) => i + 1);
+    }
+
+    let start = Math.max(1, offersPage - 3);
+    let end = Math.min(totalOffersPages, start + maxVisible - 1);
+    start = Math.max(1, end - maxVisible + 1);
+
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  }, [offersPage, totalOffersPages]);
+
+  useEffect(() => {
+    setOffersPage(1);
+  }, [channelFilter, safeSettings.threshold]);
+
+  useEffect(() => {
+    if (offersPage > totalOffersPages) {
+      setOffersPage(totalOffersPages);
+    }
+  }, [offersPage, totalOffersPages]);
 
   const stats = useMemo(() => {
     const thr = Number.isFinite(safeSettings.threshold)
@@ -2290,9 +2376,14 @@ function MainDashboard({
         <button
           type="button"
           onClick={() => setPreviewHtmlCard(r)}
-          className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+          className="inline-flex rounded-md border border-slate-200 bg-white p-1 hover:bg-slate-50"
         >
-          HTML 카드
+          <img
+            src={r.captureThumb || "/placeholder.png"}
+            alt={`${displaySellerName(r.channel, r.seller)} 썸네일`}
+            className="h-12 w-16 rounded object-cover"
+            loading="lazy"
+          />
         </button>
       ),
     },
@@ -2357,7 +2448,6 @@ function MainDashboard({
           setHtmlGenerating(false);
         }}
       />
-
       <div className="grid grid-cols-12 gap-4">
         <div className="col-span-12 lg:col-span-4">
           <SettingsPanel
@@ -2461,15 +2551,79 @@ function MainDashboard({
       <Card
         title={`기준가 이하 판매처${channelFilter !== "all" ? ` (${channelFilter === "naver" ? "네이버" : channelFilter === "coupang" ? "쿠팡" : "기타"})` : ""}`}
         right={
-          <div className="text-sm text-slate-500">
-            기준가:{" "}
-            <span className="font-semibold text-slate-900">
-              {formatKRW(safeSettings.threshold)}
-            </span>
+          <div className="flex items-center gap-3 text-sm text-slate-500">
+            <div>
+              기준가:{" "}
+              <span className="font-semibold text-slate-900">
+                {formatKRW(safeSettings.threshold)}
+              </span>
+            </div>
+            <div>
+              페이지:{" "}
+              <span className="font-semibold text-slate-900">
+                {offersPage} / {totalOffersPages}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="rounded-md border border-slate-200 px-2 py-1 text-xs disabled:opacity-50"
+              disabled={offersPage <= 1}
+              onClick={() => setOffersPage((p) => Math.max(1, p - 1))}
+            >
+              이전
+            </button>
+            {pageNumbers[0] > 1 && (
+              <>
+                <button
+                  type="button"
+                  className="rounded-md border border-slate-200 px-2 py-1 text-xs"
+                  onClick={() => setOffersPage(1)}
+                >
+                  1
+                </button>
+                {pageNumbers[0] > 2 && <span className="text-xs">...</span>}
+              </>
+            )}
+            {pageNumbers.map((pageNum) => (
+              <button
+                key={pageNum}
+                type="button"
+                className={`rounded-md border px-2 py-1 text-xs ${
+                  offersPage === pageNum
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-200"
+                }`}
+                onClick={() => setOffersPage(pageNum)}
+              >
+                {pageNum}
+              </button>
+            ))}
+            {pageNumbers[pageNumbers.length - 1] < totalOffersPages && (
+              <>
+                {pageNumbers[pageNumbers.length - 1] < totalOffersPages - 1 && (
+                  <span className="text-xs">...</span>
+                )}
+                <button
+                  type="button"
+                  className="rounded-md border border-slate-200 px-2 py-1 text-xs"
+                  onClick={() => setOffersPage(totalOffersPages)}
+                >
+                  {totalOffersPages}
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              className="rounded-md border border-slate-200 px-2 py-1 text-xs disabled:opacity-50"
+              disabled={offersPage >= totalOffersPages}
+              onClick={() => setOffersPage((p) => Math.min(totalOffersPages, p + 1))}
+            >
+              다음
+            </button>
           </div>
         }
       >
-        <Table columns={columns} rows={filteredOffers} />
+        <Table columns={columns} rows={pagedOffers} />
       </Card>
     </div>
   );
@@ -2623,10 +2777,10 @@ function ChannelSellers({
             {channelKey === "naver" && mallsTrends?.data?.length > 0 ? (
               <PriceTrend
                 mode={mode}
-                data={mallsTrends.data.map((item) => ({
-                  ...item,
-                  x: item.x || item.date,
-                }))}
+                data={buildContinuousMallTrendData(
+                  mallsTrends.data,
+                  mallsTrends.malls || [],
+                )}
                 malls={mallsTrends.malls || []}
               />
             ) : (
@@ -3069,6 +3223,7 @@ export default function App() {
   });
   const [medicalModalOpen, setMedicalModalOpen] = useState(false);
   const [medicalSerialInput, setMedicalSerialInput] = useState("");
+  const wasCrawlRunningRef = useRef(false);
 
   const handleOpenMedicalDeviceSite = () => {
     setMedicalModalOpen(true);
@@ -3098,44 +3253,50 @@ export default function App() {
     navigate("/");
   };
 
+  const refreshDashboardData = useCallback(async ({ showLoader = false } = {}) => {
+    if (showLoader) setLoading(true);
+
+    // config 먼저 로드해서 기준가 설정
+    const config = await fetchConfig();
+    if (config.target_price) {
+      setSettings((prev) => ({ ...prev, threshold: config.target_price }));
+    }
+
+    const [products, summary, trends, top] = await Promise.all([
+      fetchLatestProducts(),
+      fetchTrackedMallsSummary(),
+      fetchTrackedMallsTrends(90),
+      fetchMallsTop(10),
+    ]);
+    setProductsData(products);
+    setMallsSummary(summary);
+    setMallsTrends(trends);
+    setMallsTop(top);
+    if (showLoader) setLoading(false);
+  }, []);
+
   // API 데이터 로드
   useEffect(() => {
-    async function loadData() {
-      setLoading(true);
-
-      // config 먼저 로드해서 기준가 설정
-      const config = await fetchConfig();
-      if (config.target_price) {
-        setSettings((prev) => ({ ...prev, threshold: config.target_price }));
-      }
-
-      const [products, summary, trends, top] = await Promise.all([
-        fetchLatestProducts(),
-        fetchTrackedMallsSummary(),
-        fetchTrackedMallsTrends(90),
-        fetchMallsTop(10),
-      ]);
-      setProductsData(products);
-      setMallsSummary(summary);
-      setMallsTrends(trends);
-      setMallsTop(top);
-      setLoading(false);
-    }
-    loadData();
-  }, []);
+    refreshDashboardData({ showLoader: true });
+  }, [refreshDashboardData]);
 
   useEffect(() => {
     let timer = null;
     const pollStatus = async () => {
       const status = await fetchCrawlStatus();
       setCrawlStatus(status);
+      if (wasCrawlRunningRef.current && !status.running) {
+        // 크롤링이 끝난 시점에 최신 스냅샷 데이터를 다시 가져와 메인 목록을 교체한다.
+        await refreshDashboardData();
+      }
+      wasCrawlRunningRef.current = Boolean(status.running);
     };
     pollStatus();
     timer = setInterval(pollStatus, 10000);
     return () => {
       if (timer) clearInterval(timer);
     };
-  }, []);
+  }, [refreshDashboardData]);
 
   const handleRunCrawlNow = async () => {
     if (crawlActionLoading || crawlStatus.running) return;
@@ -3143,9 +3304,14 @@ export default function App() {
     const result = await runCrawlNow();
     if (result?.status === "started") {
       setCrawlStatus((prev) => ({ ...prev, running: true, last_error: null }));
+      wasCrawlRunningRef.current = true;
     }
     const latestStatus = await fetchCrawlStatus();
     setCrawlStatus(latestStatus);
+    if (!latestStatus?.running) {
+      await refreshDashboardData();
+    }
+    wasCrawlRunningRef.current = Boolean(latestStatus?.running);
     setCrawlActionLoading(false);
   };
 
