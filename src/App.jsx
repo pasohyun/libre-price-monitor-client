@@ -37,12 +37,13 @@ import {
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 const MEDICAL_DEVICE_BASE_URL = "https://2d.daewoong.co.kr/frame/index.do";
 
-async function fetchLatestProducts() {
+async function fetchLatestProducts(channel) {
   try {
-    let response = await fetch(`${API_BASE}/products/latest`);
+    const qs = channel ? `?channel=${encodeURIComponent(channel)}` : "";
+    let response = await fetch(`${API_BASE}/products/latest${qs}`);
     if (response.status === 404) {
       // Backward compatibility for older backend deployments
-      response = await fetch(`${API_BASE}/products/today`);
+      response = await fetch(`${API_BASE}/products/today${qs}`);
     }
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`);
@@ -66,9 +67,10 @@ async function fetchConfig() {
   }
 }
 
-async function fetchTrackedMallsSummary() {
+async function fetchTrackedMallsSummary(channel) {
   try {
-    const response = await fetch(`${API_BASE}/products/tracked-malls/summary`);
+    const qs = channel ? `?channel=${encodeURIComponent(channel)}` : "";
+    const response = await fetch(`${API_BASE}/products/tracked-malls/summary${qs}`);
     if (!response.ok) throw new Error(`API error: ${response.status}`);
     return await response.json();
   } catch (error) {
@@ -77,10 +79,12 @@ async function fetchTrackedMallsSummary() {
   }
 }
 
-async function fetchTrackedMallsTrends(days = 7) {
+async function fetchTrackedMallsTrends(days = 7, channel) {
   try {
+    const params = new URLSearchParams({ days: String(days) });
+    if (channel) params.set("channel", channel);
     const response = await fetch(
-      `${API_BASE}/products/tracked-malls/trends?days=${days}`,
+      `${API_BASE}/products/tracked-malls/trends?${params.toString()}`,
     );
     if (!response.ok) throw new Error(`API error: ${response.status}`);
     return await response.json();
@@ -133,10 +137,15 @@ async function fetchCrawlStatus() {
   }
 }
 
-async function fetchMallTimeline(mallName, days = 30) {
+async function fetchMallTimeline(mallName, days = 30, channel) {
   try {
+    const params = new URLSearchParams({
+      mall_name: mallName,
+      days: String(days),
+    });
+    if (channel) params.set("channel", channel);
     const response = await fetch(
-      `${API_BASE}/products/mall/timeline?mall_name=${encodeURIComponent(mallName)}&days=${days}`,
+      `${API_BASE}/products/mall/timeline?${params.toString()}`,
     );
     if (!response.ok) throw new Error(`API error: ${response.status}`);
     return await response.json();
@@ -2642,17 +2651,41 @@ function ChannelSellers({
   settings,
   onBack,
   onSelectSeller,
-  mallsSummary,
-  mallsTrends,
+  mallsSummary: parentMallsSummary,
+  mallsTrends: parentMallsTrends,
   offers = [],
 }) {
   const [mode, setMode] = useState("daily");
   const [marketFilter, setMarketFilter] = useState("all");
+  const [channelSummary, setChannelSummary] = useState(null);
+  const [channelTrends, setChannelTrends] = useState(null);
+
+  // 채널별 데이터 로드 (naver는 부모에서 받은 데이터 사용, coupang은 별도 fetch)
+  useEffect(() => {
+    if (channelKey === "naver") {
+      setChannelSummary(parentMallsSummary);
+      setChannelTrends(parentMallsTrends);
+    } else {
+      // coupang 등 다른 채널은 channel 파라미터로 별도 fetch
+      async function loadChannelData() {
+        const [summary, trends] = await Promise.all([
+          fetchTrackedMallsSummary(channelKey),
+          fetchTrackedMallsTrends(90, channelKey),
+        ]);
+        setChannelSummary(summary);
+        setChannelTrends(trends);
+      }
+      loadChannelData();
+    }
+  }, [channelKey, parentMallsSummary, parentMallsTrends]);
+
+  const mallsSummary = channelSummary;
+  const mallsTrends = channelTrends;
 
   // API 데이터가 있으면 사용, 없으면 offers에서 동적 추출
   const sellers = useMemo(() => {
-    // 네이버: tracked-malls summary API 데이터 사용
-    if (channelKey === "naver" && mallsSummary?.data?.length > 0) {
+    // tracked-malls summary API 데이터 사용
+    if (mallsSummary?.data?.length > 0) {
       return mallsSummary.data.map((mall) => ({
         seller: mall.mall_name,
         currentConsideredUnitPrice: mall.current_price,
@@ -2663,7 +2696,7 @@ function ChannelSellers({
       }));
     }
 
-    // 쿠팡/기타: offers에서 해당 채널의 판매처를 동적 추출
+    // API 데이터 없으면 offers에서 해당 채널의 판매처를 동적 추출
     const channelOffers = offers.filter((o) => o.channel === channelKey);
     if (channelOffers.length > 0) {
       const sellerMap = new Map();
@@ -2782,7 +2815,7 @@ function ChannelSellers({
 
         <div className="col-span-12 lg:col-span-8">
           <Card title="채널 판매가 추이">
-            {channelKey === "naver" && mallsTrends?.data?.length > 0 ? (
+            {mallsTrends?.data?.length > 0 ? (
               <PriceTrend
                 mode={mode}
                 data={buildContinuousMallTrendData(
@@ -2874,16 +2907,11 @@ function SellerDetail({
   useEffect(() => {
     async function loadTimeline() {
       setTimelineLoading(true);
-      if (channelKey === "naver") {
-        const result = await fetchMallTimeline(sellerName, 30);
-        if (result.data && result.data.length > 0) {
-          setTimelineData(result.data);
-        } else {
-          // API 데이터 없으면 Mock 폴백
-          const key = `${channelKey}::${sellerName}`;
-          setTimelineData(SAMPLE_SELLER_TIMELINE[key] ?? []);
-        }
+      const result = await fetchMallTimeline(sellerName, 30, channelKey);
+      if (result.data && result.data.length > 0) {
+        setTimelineData(result.data);
       } else {
+        // API 데이터 없으면 Mock 폴백
         const key = `${channelKey}::${sellerName}`;
         setTimelineData(SAMPLE_SELLER_TIMELINE[key] ?? []);
       }
@@ -3057,7 +3085,7 @@ function SellerDetail({
           if (!result?.updated && result?.message) {
             window.alert(`수동확인 저장 실패: ${result.message}`);
           } else {
-            const refreshed = await fetchMallTimeline(sellerName, 30);
+            const refreshed = await fetchMallTimeline(sellerName, 30, channelKey);
             if (refreshed?.data) setTimelineData(refreshed.data);
             setManualModalOpen(false);
             setManualTarget(null);
