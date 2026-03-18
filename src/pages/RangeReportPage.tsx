@@ -306,116 +306,106 @@ export default function RangeReportPage() {
               {belowList.length === 0 ? (
                 <div>(기준가 이하 셀러 없음)</div>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                  {belowList.map((r: any, i: number) => (
-                    <div
-                      key={i}
-                      style={{
-                        border: "1px solid #e5e7eb",
-                        borderRadius: 12,
-                        padding: 16,
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          marginBottom: 8,
-                        }}
-                      >
-                        <div style={{ fontWeight: 800, fontSize: 15 }}>
-                          {r?.seller_name ?? "-"}{" "}
-                          <span style={{ fontWeight: 500, opacity: 0.7 }}>
-                            ({r?.platform ?? "-"})
-                          </span>
-                        </div>
-                        <div style={{ fontSize: 13, opacity: 0.8 }}>
-                          {fmtTime(r?.time)}
-                        </div>
-                      </div>
-
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr 1fr",
-                          gap: 8,
-                          fontSize: 13,
-                          marginBottom: 12,
-                        }}
-                      >
-                        <div>
-                          최저 단가: <b>{fmtMoney(r?.unit_price)}</b>
-                        </div>
-                        <div>
-                          금액: <b>{fmtMoney(r?.total_price)}</b>
-                        </div>
-                        <div>
-                          수량: <b>{r?.quantity ?? "-"}</b>
-                        </div>
-                      </div>
-
-                      {/* Evidence 카드 썸네일 */}
-                      {r?.card_html ? (
-                        <div
-                          onClick={() => setModalHtml(r.card_html)}
-                          style={{
-                            border: "1px solid #e5e7eb",
-                            borderRadius: 8,
-                            overflow: "hidden",
-                            cursor: "pointer",
-                            maxHeight: 120,
-                            position: "relative",
-                          }}
-                        >
-                          <iframe
-                            srcDoc={r.card_html}
+                <div style={{ overflow: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr>
+                        {["판매처", "채널", "최저 단가", "총 금액", "수량", "카드"].map((h) => (
+                          <th
+                            key={h}
                             style={{
-                              width: "100%",
-                              height: 300,
-                              border: "none",
-                              pointerEvents: "none",
-                              transform: "scale(0.4)",
-                              transformOrigin: "top left",
-                              width: "250%",
-                            }}
-                            sandbox="allow-same-origin"
-                            title={`evidence-thumb-${i}`}
-                          />
-                          <div
-                            style={{
-                              position: "absolute",
-                              bottom: 0,
-                              left: 0,
-                              right: 0,
-                              height: 32,
-                              background: "linear-gradient(transparent, white)",
-                              display: "flex",
-                              alignItems: "flex-end",
-                              justifyContent: "center",
-                              paddingBottom: 6,
-                              fontSize: 11,
-                              color: "#6b7280",
+                              textAlign: "left",
+                              fontSize: 12,
+                              padding: "8px 6px",
+                              borderBottom: "1px solid #e5e7eb",
+                              whiteSpace: "nowrap",
                             }}
                           >
-                            클릭하여 크게 보기
-                          </div>
-                        </div>
-                      ) : r?.link ? (
-                        <a href={r.link} target="_blank" rel="noreferrer">
-                          증빙 링크
-                        </a>
-                      ) : r?.card_image_path ? (
-                        <a
-                          href={`${API_BASE_URL}/${r.card_image_path}`}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          캡쳐본 보기
-                        </a>
-                      ) : null}
-                    </div>
-                  ))}
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {belowList.map((r: any, i: number) => (
+                        <tr key={i}>
+                          <td style={{ padding: "8px 6px", borderBottom: "1px solid #f3f4f6", fontWeight: 600 }}>
+                            {r?.seller_name ?? "-"}
+                          </td>
+                          <td style={{ padding: "8px 6px", borderBottom: "1px solid #f3f4f6" }}>
+                            {r?.platform ?? "-"}
+                          </td>
+                          <td style={{ padding: "8px 6px", borderBottom: "1px solid #f3f4f6", whiteSpace: "nowrap" }}>
+                            {fmtMoney(r?.unit_price)}
+                          </td>
+                          <td style={{ padding: "8px 6px", borderBottom: "1px solid #f3f4f6", whiteSpace: "nowrap" }}>
+                            {fmtMoney(r?.total_price)}
+                          </td>
+                          <td style={{ padding: "8px 6px", borderBottom: "1px solid #f3f4f6" }}>
+                            {r?.quantity ?? "-"}
+                          </td>
+                          <td style={{ padding: "8px 6px", borderBottom: "1px solid #f3f4f6" }}>
+                            {r?.card_html ? (
+                              <div
+                                onClick={() => setModalHtml(r.card_html)}
+                                style={{
+                                  width: 80,
+                                  height: 60,
+                                  border: "1px solid #e5e7eb",
+                                  borderRadius: 6,
+                                  overflow: "hidden",
+                                  cursor: "pointer",
+                                  position: "relative",
+                                }}
+                              >
+                                <iframe
+                                  srcDoc={r.card_html}
+                                  style={{
+                                    width: "500%",
+                                    height: 500,
+                                    border: "none",
+                                    pointerEvents: "none",
+                                    transform: "scale(0.16)",
+                                    transformOrigin: "top left",
+                                  }}
+                                  sandbox="allow-same-origin"
+                                  title={`evidence-thumb-${i}`}
+                                />
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    inset: 0,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    background: "rgba(255,255,255,0.5)",
+                                    fontSize: 10,
+                                    color: "#374151",
+                                    opacity: 0,
+                                    transition: "opacity 0.15s",
+                                  }}
+                                  onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.opacity = "1"; }}
+                                  onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.opacity = "0"; }}
+                                >
+                                  크게 보기
+                                </div>
+                              </div>
+                            ) : r?.link ? (
+                              <a href={r.link} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
+                                링크
+                              </a>
+                            ) : r?.card_image_path ? (
+                              <a href={`${API_BASE_URL}/${r.card_image_path}`} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
+                                캡쳐본
+                              </a>
+                            ) : (
+                              "-"
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
