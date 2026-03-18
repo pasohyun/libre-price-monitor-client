@@ -252,7 +252,7 @@ const SAMPLE_SELLER_DAILY_DATA = {
       { x: "11/05", price: 85000 },
       { x: "11/06", price: 85200 },
     ],
-    무화당: [
+    닥다몰: [
       { x: "11/01", price: 89000 },
       { x: "11/02", price: 88800 },
       { x: "11/03", price: 88500 },
@@ -268,7 +268,7 @@ const SAMPLE_SELLER_DAILY_DATA = {
       { x: "11/05", price: 89800 },
       { x: "11/06", price: 90000 },
     ],
-    글루어트: [
+    글루코핏: [
       { x: "11/01", price: 87500 },
       { x: "11/02", price: 87200 },
       { x: "11/03", price: 87000 },
@@ -340,7 +340,7 @@ const SAMPLE_SELLER_MONTHLY_DATA = {
       { x: "10월", price: 84800 },
       { x: "11월", price: 84900 },
     ],
-    무화당: [
+    닥다몰: [
       { x: "6월", price: 89000 },
       { x: "9월", price: 88800 },
       { x: "10월", price: 88600 },
@@ -352,7 +352,7 @@ const SAMPLE_SELLER_MONTHLY_DATA = {
       { x: "10월", price: 90000 },
       { x: "11월", price: 90100 },
     ],
-    글루어트: [
+    글루코핏: [
       { x: "6월", price: 87500 },
       { x: "9월", price: 87300 },
       { x: "10월", price: 87200 },
@@ -1176,10 +1176,24 @@ const clampNumber = (v, min, max) => {
 };
 
 const channelLabel = (key) => CHANNELS.find((c) => c.key === key)?.label ?? key;
+const SELLER_DISPLAY_ALIASES = {
+  글루어트: "글루코핏",
+  무화당: "닥다몰",
+};
+const SELLER_DB_ALIASES = {
+  글루코핏: "글루어트",
+  닥다몰: "무화당",
+};
+const getSellerDisplayAlias = (name) =>
+  SELLER_DISPLAY_ALIASES[String(name || "").trim()] || String(name || "").trim();
+const getSellerDataKeys = (displayName) => {
+  const legacyName = SELLER_DB_ALIASES[displayName];
+  return legacyName ? [displayName, legacyName] : [displayName];
+};
 const displaySellerName = (channel, sellerName) => {
   const name = String(sellerName || "").trim();
   if (channel === "naver" && name === "네이버") return "최저가비교";
-  return name || "알 수 없음";
+  return getSellerDisplayAlias(name) || "알 수 없음";
 };
 
 // -----------------------------
@@ -1446,7 +1460,7 @@ function PriceTrend({ mode, data, malls = [], height = 240 }) {
               key={mall}
               type="monotone"
               dataKey={mall}
-              name={mall}
+              name={getSellerDisplayAlias(mall)}
               stroke={mallColors[index % mallColors.length]}
               strokeWidth={2}
               dot={false}
@@ -3355,11 +3369,27 @@ export default function App() {
   const data = useMemo(() => {
     // API 데이터가 있으면 사용, 없으면 Mock 데이터
     if (mallsTrends.data && mallsTrends.data.length > 0) {
-      const mallNames = mallsTrends.malls || [];
-      // API 데이터를 그래프 형식으로 변환
+      const mallNamesFromApi = mallsTrends.malls || [];
+      const mallNamesResolved =
+        mallNamesFromApi.length > 0
+          ? mallNamesFromApi
+          : Object.keys(mallsTrends.data[0] || {}).filter(
+              (k) => k !== "x" && k !== "date",
+            );
+      const mallNames = Array.from(
+        new Set(mallNamesResolved.map((name) => getSellerDisplayAlias(name))),
+      );
+
+      // API 데이터를 그래프 형식으로 변환 (구이름/신이름 키 모두 대응)
       const daily = mallsTrends.data.map((item) => {
         const dateKey = item.x || item.date;
-        return { x: dateKey, ...item };
+        const normalized = { x: dateKey };
+        mallNames.forEach((mall) => {
+          const keys = getSellerDataKeys(mall);
+          const value = keys.map((k) => item[k]).find((v) => v != null);
+          if (value != null) normalized[mall] = value;
+        });
+        return normalized;
       });
 
       // 일별 데이터에서 월별 데이터 자동 집계 (월별 최저가)
@@ -3401,10 +3431,36 @@ export default function App() {
 
       return { daily, monthly, malls: mallNames };
     }
+
+    // tracked-malls API가 비어 있을 때도 기존 네이버 4개 판매처 그래프를 기본 표시한다.
+    const fallbackMalls = ["글루코핏", "레디투힐", "메디프라", "닥다몰"];
+    const toSellerChartData = (sourceByMall) => {
+      const xOrder = [];
+      const seenX = new Set();
+
+      fallbackMalls.forEach((mall) => {
+        (sourceByMall[mall] || []).forEach((point) => {
+          const x = point?.x;
+          if (!x || seenX.has(x)) return;
+          seenX.add(x);
+          xOrder.push(x);
+        });
+      });
+
+      return xOrder.map((x) => {
+        const row = { x };
+        fallbackMalls.forEach((mall) => {
+          const point = (sourceByMall[mall] || []).find((p) => p.x === x);
+          row[mall] = point ? point.price : null;
+        });
+        return row;
+      });
+    };
+
     return {
-      daily: SAMPLE_DAILY_POINTS,
-      monthly: SAMPLE_MONTHLY_POINTS,
-      malls: [],
+      daily: toSellerChartData(SAMPLE_SELLER_DAILY_DATA.naver || {}),
+      monthly: toSellerChartData(SAMPLE_SELLER_MONTHLY_DATA.naver || {}),
+      malls: fallbackMalls,
     };
   }, [mallsTrends]);
 
