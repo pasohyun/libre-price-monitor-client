@@ -39,7 +39,11 @@ const MEDICAL_DEVICE_BASE_URL = "https://2d.daewoong.co.kr/frame/index.do";
 
 async function fetchLatestProducts() {
   try {
-    const response = await fetch(`${API_BASE}/products/latest`);
+    let response = await fetch(`${API_BASE}/products/today`);
+    if (response.status === 404) {
+      // Backward compatibility for older backend deployments
+      response = await fetch(`${API_BASE}/products/latest`);
+    }
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`);
     }
@@ -162,6 +166,29 @@ async function generateCardImageOnDemand(productId) {
   } catch (error) {
     console.error("Failed to generate card image:", error);
     return { created: false, card_image_path: null, message: String(error) };
+  }
+}
+
+async function confirmManualQuantity(productId, quantity) {
+  try {
+    const response = await fetch(
+      `${API_BASE}/products/manual-confirm?product_id=${encodeURIComponent(productId)}&quantity=${encodeURIComponent(quantity)}`,
+      { method: "POST" },
+    );
+    if (!response.ok) {
+      let detail = `API error: ${response.status}`;
+      try {
+        const err = await response.json();
+        if (err?.detail) detail = String(err.detail);
+      } catch {
+        // ignore
+      }
+      throw new Error(detail);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error("Failed to confirm manual quantity:", error);
+    return { updated: false, message: String(error) };
   }
 }
 
@@ -2010,6 +2037,7 @@ function MedicalSerialModal({
   open,
   serialInput,
   onChangeSerial,
+  onOpenLogin,
   onClose,
   onSubmit,
 }) {
@@ -2027,7 +2055,10 @@ function MedicalSerialModal({
           의료기기 페이지 이동
         </div>
         <div className="mt-1 text-sm text-slate-600">
-          시리얼 번호를 입력하면 해당 값과 함께 새 창으로 이동합니다.
+          먼저 로그인 페이지를 열어 로그인한 뒤, 시리얼 페이지 열기를 눌러 주세요.
+        </div>
+        <div className="mt-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
+          1) 로그인 페이지 열기  2) 시리얼 입력  3) 시리얼 페이지 열기
         </div>
         <input
           className="mt-4 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
@@ -2037,8 +2068,56 @@ function MedicalSerialModal({
           autoFocus
         />
         <div className="mt-4 flex items-center justify-end gap-2">
+          <GhostButton onClick={onOpenLogin}>로그인 페이지 열기</GhostButton>
           <GhostButton onClick={onClose}>취소</GhostButton>
-          <PrimaryButton onClick={onSubmit}>새 창 열기</PrimaryButton>
+          <PrimaryButton onClick={onSubmit}>시리얼 페이지 열기</PrimaryButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ManualQuantityModal({
+  open,
+  target,
+  quantityInput,
+  onChangeQuantity,
+  onClose,
+  onSubmit,
+  submitting = false,
+}) {
+  if (!open || !target) return null;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={onClose}
+    >
+      <div
+        className="w-[92vw] max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="text-lg font-semibold text-slate-900">수동 수량 확인</div>
+        <div className="mt-1 text-sm text-slate-600 line-clamp-2">
+          {target.productName || "-"}
+        </div>
+        <div className="mt-3 text-xs text-slate-500">
+          현재 수량: {target.pack || 0}개 / 판매가: {formatKRW(target.price || 0)}
+        </div>
+        <input
+          className="mt-4 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
+          placeholder="확정 수량 입력"
+          value={quantityInput}
+          onChange={(e) => {
+            const input = e.target.value;
+            if (input === "" || /^\d+$/.test(input)) onChangeQuantity(input);
+          }}
+          autoFocus
+        />
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <GhostButton onClick={onClose}>취소</GhostButton>
+          <PrimaryButton onClick={onSubmit} disabled={submitting || !quantityInput}>
+            {submitting ? "저장 중..." : "확정 저장"}
+          </PrimaryButton>
         </div>
       </div>
     </div>
@@ -2054,6 +2133,7 @@ function MainDashboard({
   onRunCrawl,
   onGoChannel,
   onGenerateImage,
+  onManualConfirm,
   data,
   offers,
   mallsSummary,
@@ -2062,6 +2142,10 @@ function MainDashboard({
   const [trendMode, setTrendMode] = useState("daily"); // daily/monthly
   const [previewHtmlCard, setPreviewHtmlCard] = useState(null);
   const [htmlGenerating, setHtmlGenerating] = useState(false);
+  const [manualModalOpen, setManualModalOpen] = useState(false);
+  const [manualTarget, setManualTarget] = useState(null);
+  const [manualQtyInput, setManualQtyInput] = useState("");
+  const [manualSubmitting, setManualSubmitting] = useState(false);
   const [channelFilter, setChannelFilter] = useState("all"); // all | naver | coupang | others
 
   const filteredOffers = useMemo(() => {
@@ -2148,15 +2232,28 @@ function MainDashboard({
           <div className="space-y-1">
             <div className="font-semibold">{formatKRW(r.unitPrice)}</div>
             {needsCheck && (
-              <div className="text-xs">
-                <Badge tone="warning">⚠ 수동확인</Badge>
-                <span className="ml-1 text-amber-600 text-[10px]">
-                  {r.calcMethod === "가격역산(보정)"
-                    ? "수량추정"
-                    : r.calcMethod === "텍스트분석(범위초과)"
-                      ? "범위초과"
-                      : "확인필요"}
-                </span>
+              <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-2 py-1">
+                <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                  <Badge tone="warning">⚠ 수동확인</Badge>
+                  <span className="rounded-full border border-amber-200 bg-white px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                    {r.calcMethod === "가격역산(보정)"
+                      ? "수량추정"
+                      : r.calcMethod === "텍스트분석(범위초과)"
+                        ? "범위초과"
+                        : "확인필요"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setManualTarget(r);
+                      setManualQtyInput(String(r.pack || ""));
+                      setManualModalOpen(true);
+                    }}
+                    className="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-amber-700 hover:bg-amber-100"
+                  >
+                    수량확정
+                  </button>
+                </div>
               </div>
             )}
             {Number.isFinite(diff) && diff >= 0 ? (
@@ -2203,6 +2300,37 @@ function MainDashboard({
 
   return (
     <div className="space-y-6">
+      <ManualQuantityModal
+        open={manualModalOpen}
+        target={manualTarget}
+        quantityInput={manualQtyInput}
+        onChangeQuantity={setManualQtyInput}
+        submitting={manualSubmitting}
+        onSubmit={async () => {
+          const qty = Number(manualQtyInput);
+          if (!Number.isFinite(qty) || qty <= 0) {
+            window.alert("수량은 1 이상의 숫자로 입력해 주세요.");
+            return;
+          }
+          if (!manualTarget?.productId) return;
+          setManualSubmitting(true);
+          const result = await onManualConfirm(manualTarget.productId, qty);
+          if (!result?.updated && result?.message) {
+            window.alert(`수동확인 저장 실패: ${result.message}`);
+          } else {
+            setManualModalOpen(false);
+            setManualTarget(null);
+            setManualQtyInput("");
+          }
+          setManualSubmitting(false);
+        }}
+        onClose={() => {
+          if (manualSubmitting) return;
+          setManualModalOpen(false);
+          setManualTarget(null);
+          setManualQtyInput("");
+        }}
+      />
       <HtmlCardModal
         open={!!previewHtmlCard}
         row={previewHtmlCard}
@@ -2219,10 +2347,8 @@ function MainDashboard({
           if (!previewHtmlCard?.productId) return;
           setHtmlGenerating(true);
           const res = await onGenerateImage(previewHtmlCard.productId);
-          if (res?.card_image_path) {
-            setPreviewHtmlCard((prev) =>
-              prev ? { ...prev, captureThumb: res.card_image_path } : prev,
-            );
+          if (!res?.card_image_path && res?.message) {
+            window.alert(`이미지 생성 실패: ${res.message}`);
           }
           setHtmlGenerating(false);
         }}
@@ -2564,11 +2690,21 @@ function ChannelSellers({
   );
 }
 
-function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
+function SellerDetail({
+  channelKey,
+  sellerName,
+  settings,
+  onBackToChannel,
+  onManualConfirm,
+}) {
   const [mode, setMode] = useState("daily");
   const [previewImage, setPreviewImage] = useState(null);
   const [previewHtmlCard, setPreviewHtmlCard] = useState(null);
   const [htmlGenerating, setHtmlGenerating] = useState(false);
+  const [manualModalOpen, setManualModalOpen] = useState(false);
+  const [manualTarget, setManualTarget] = useState(null);
+  const [manualQtyInput, setManualQtyInput] = useState("");
+  const [manualSubmitting, setManualSubmitting] = useState(false);
   const [timelineData, setTimelineData] = useState([]);
   const [timelineLoading, setTimelineLoading] = useState(true);
 
@@ -2654,15 +2790,28 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
           <div className="space-y-1">
             <div className="font-semibold">{formatKRW(r.unitPrice)}</div>
             {needsCheck && (
-              <div className="text-xs">
-                <Badge tone="warning">⚠ 수동확인</Badge>
-                <span className="ml-1 text-amber-600 text-[10px]">
-                  {r.calcMethod === "가격역산(보정)"
-                    ? "수량추정"
-                    : r.calcMethod === "텍스트분석(범위초과)"
-                      ? "범위초과"
-                      : "확인필요"}
-                </span>
+              <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-2 py-1">
+                <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                  <Badge tone="warning">⚠ 수동확인</Badge>
+                  <span className="rounded-full border border-amber-200 bg-white px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                    {r.calcMethod === "가격역산(보정)"
+                      ? "수량추정"
+                      : r.calcMethod === "텍스트분석(범위초과)"
+                        ? "범위초과"
+                        : "확인필요"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setManualTarget(r);
+                      setManualQtyInput(String(r.pack || ""));
+                      setManualModalOpen(true);
+                    }}
+                    className="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-amber-700 hover:bg-amber-100"
+                  >
+                    수량확정
+                  </button>
+                </div>
               </div>
             )}
             {diff >= 0 ? (
@@ -2728,6 +2877,39 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
 
   return (
     <div className="space-y-6">
+      <ManualQuantityModal
+        open={manualModalOpen}
+        target={manualTarget}
+        quantityInput={manualQtyInput}
+        onChangeQuantity={setManualQtyInput}
+        submitting={manualSubmitting}
+        onSubmit={async () => {
+          const qty = Number(manualQtyInput);
+          if (!Number.isFinite(qty) || qty <= 0) {
+            window.alert("수량은 1 이상의 숫자로 입력해 주세요.");
+            return;
+          }
+          if (!manualTarget?.productId) return;
+          setManualSubmitting(true);
+          const result = await onManualConfirm(manualTarget.productId, qty);
+          if (!result?.updated && result?.message) {
+            window.alert(`수동확인 저장 실패: ${result.message}`);
+          } else {
+            const refreshed = await fetchMallTimeline(sellerName, 30);
+            if (refreshed?.data) setTimelineData(refreshed.data);
+            setManualModalOpen(false);
+            setManualTarget(null);
+            setManualQtyInput("");
+          }
+          setManualSubmitting(false);
+        }}
+        onClose={() => {
+          if (manualSubmitting) return;
+          setManualModalOpen(false);
+          setManualTarget(null);
+          setManualQtyInput("");
+        }}
+      />
       <ImageModal
         open={!!previewImage}
         src={previewImage}
@@ -2742,17 +2924,8 @@ function SellerDetail({ channelKey, sellerName, settings, onBackToChannel }) {
           if (!previewHtmlCard?.productId) return;
           setHtmlGenerating(true);
           const res = await generateCardImageOnDemand(previewHtmlCard.productId);
-          if (res?.card_image_path) {
-            setTimelineData((prev) =>
-              prev.map((it) =>
-                it.id === previewHtmlCard.productId
-                  ? { ...it, captureThumb: res.card_image_path }
-                  : it,
-              ),
-            );
-            setPreviewHtmlCard((prev) =>
-              prev ? { ...prev, captureThumb: res.card_image_path } : prev,
-            );
+          if (!res?.card_image_path && res?.message) {
+            window.alert(`이미지 생성 실패: ${res.message}`);
           }
           setHtmlGenerating(false);
         }}
@@ -2899,6 +3072,10 @@ export default function App() {
 
   const handleOpenMedicalDeviceSite = () => {
     setMedicalModalOpen(true);
+  };
+
+  const handleOpenMedicalLoginPage = () => {
+    window.open(MEDICAL_DEVICE_BASE_URL, "_blank", "noopener,noreferrer");
   };
 
   const handleSubmitMedicalModal = () => {
@@ -3068,8 +3245,10 @@ export default function App() {
         unitPrice: item.unit_price,
         calcMethod: item.calc_method || "텍스트분석",
         url: item.link || "#",
-        capturedAt: formatDateTimeKST(productsData.snapshot_time),
-        capturedAtMs: parseDateLike(productsData.snapshot_time)?.getTime() ?? 0,
+        capturedAt: formatDateTimeKST(item.snapshot_time || productsData.snapshot_time),
+        capturedAtMs:
+          parseDateLike(item.snapshot_time || productsData.snapshot_time)?.getTime() ??
+          0,
         captureThumb: item.image_url || "/placeholder.png",
       };
     });
@@ -3085,11 +3264,26 @@ export default function App() {
             ? {
                 ...it,
                 card_image_path: result.card_image_path,
-                image_url: result.card_image_path,
               }
             : it,
         ),
       }));
+      // 서버 저장 결과를 다시 읽어와 새로고침 후에도 동일하게 보이도록 동기화
+      const latest = await fetchLatestProducts();
+      if (latest?.data) {
+        setProductsData(latest);
+      }
+    } else if (result?.message) {
+      window.alert(`이미지 생성 실패: ${result.message}`);
+    }
+    return result;
+  };
+
+  const handleManualConfirmQuantity = async (productId, quantity) => {
+    const result = await confirmManualQuantity(productId, quantity);
+    if (result?.updated) {
+      const latest = await fetchLatestProducts();
+      if (latest?.data) setProductsData(latest);
     }
     return result;
   };
@@ -3159,6 +3353,7 @@ export default function App() {
         open={medicalModalOpen}
         serialInput={medicalSerialInput}
         onChangeSerial={setMedicalSerialInput}
+        onOpenLogin={handleOpenMedicalLoginPage}
         onClose={() => {
           setMedicalModalOpen(false);
           setMedicalSerialInput("");
@@ -3184,6 +3379,7 @@ export default function App() {
                       setRoute({ page: "channel", channelKey, sellerName: "" })
                     }
                     onGenerateImage={handleGenerateImageOnDemand}
+                    onManualConfirm={handleManualConfirmQuantity}
                     data={data}
                     offers={offers}
                     mallsSummary={mallsSummary}
@@ -3220,6 +3416,7 @@ export default function App() {
                     channelKey={route.channelKey}
                     sellerName={route.sellerName}
                     settings={safeSettings}
+                    onManualConfirm={handleManualConfirmQuantity}
                     onBackToChannel={() =>
                       setRoute({
                         page: "channel",
