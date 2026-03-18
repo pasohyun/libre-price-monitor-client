@@ -73,7 +73,7 @@ export default function RangeReportPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<ReportData | null>(null);
-  const [modalHtml, setModalHtml] = useState<string | null>(null);
+  const [modalData, setModalData] = useState<{ html: string; link?: string } | null>(null);
 
 
   const onFetch = async () => {
@@ -347,7 +347,7 @@ export default function RangeReportPage() {
                           <td style={{ padding: "8px 6px", borderBottom: "1px solid #f3f4f6" }}>
                             {r?.card_html ? (
                               <div
-                                onClick={() => setModalHtml(r.card_html)}
+                                onClick={() => setModalData({ html: r.card_html, link: r.link })}
                                 style={{
                                   width: 80,
                                   height: 60,
@@ -555,9 +555,9 @@ export default function RangeReportPage() {
         </div>
       )}
       {/* Evidence 카드 모달 */}
-      {modalHtml && (
+      {modalData && (
         <div
-          onClick={() => setModalHtml(null)}
+          onClick={() => setModalData(null)}
           style={{
             position: "fixed",
             inset: 0,
@@ -566,19 +566,21 @@ export default function RangeReportPage() {
             alignItems: "center",
             justifyContent: "center",
             background: "rgba(0,0,0,0.6)",
+            padding: 16,
           }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              width: "90vw",
-              maxWidth: 900,
+              width: "fit-content",
+              maxWidth: "90vw",
               maxHeight: "90vh",
               background: "white",
               borderRadius: 16,
-              padding: 16,
+              padding: 20,
               display: "flex",
               flexDirection: "column",
+              overflow: "auto",
             }}
           >
             <div
@@ -587,35 +589,51 @@ export default function RangeReportPage() {
                 justifyContent: "space-between",
                 alignItems: "center",
                 marginBottom: 12,
+                gap: 16,
               }}
             >
               <div style={{ fontWeight: 700 }}>Evidence 카드</div>
-              <button
-                type="button"
-                onClick={() => setModalHtml(null)}
-                style={{
-                  border: "1px solid #d1d5db",
-                  borderRadius: 8,
-                  padding: "4px 12px",
-                  fontSize: 13,
-                  cursor: "pointer",
-                  background: "white",
-                }}
-              >
-                닫기
-              </button>
+              <div style={{ display: "flex", gap: 8 }}>
+                {modalData.link && (
+                  <a
+                    href={modalData.link}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      border: "1px solid #111827",
+                      borderRadius: 8,
+                      padding: "4px 12px",
+                      fontSize: 13,
+                      background: "#111827",
+                      color: "white",
+                      textDecoration: "none",
+                    }}
+                  >
+                    원문 바로가기
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setModalData(null)}
+                  style={{
+                    border: "1px solid #d1d5db",
+                    borderRadius: 8,
+                    padding: "4px 12px",
+                    fontSize: 13,
+                    cursor: "pointer",
+                    background: "white",
+                  }}
+                >
+                  닫기
+                </button>
+              </div>
             </div>
-            <iframe
-              srcDoc={modalHtml}
+            <div
+              dangerouslySetInnerHTML={{ __html: modalData.html }}
               style={{
-                width: "100%",
-                flex: 1,
-                minHeight: 500,
-                border: "none",
                 borderRadius: 8,
+                overflow: "auto",
               }}
-              sandbox="allow-same-origin"
-              title="evidence-card-modal"
             />
           </div>
         </div>
