@@ -80,6 +80,7 @@ export default function RangeReportPage() {
   // 기준가 이하 리스트 필터
   const [filterQuantity, setFilterQuantity] = useState<number | "">("");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [expandedSellers, setExpandedSellers] = useState<Set<number>>(new Set());
 
 
   const onFetch = async () => {
@@ -391,7 +392,7 @@ export default function RangeReportPage() {
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>
                       <tr>
-                        {["판매처", "채널", "최저 단가", "총 금액", "수량", "카드"].map((h) => (
+                        {["", "판매처", "채널", "최저 단가", "총 금액", "수량", "시점", "카드"].map((h) => (
                           <th
                             key={h}
                             style={{
@@ -408,27 +409,24 @@ export default function RangeReportPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {belowList.map((r: any, i: number) => (
-                        <tr key={i}>
-                          <td style={{ padding: "8px 6px", borderBottom: "1px solid #f3f4f6", fontWeight: 600 }}>
-                            {r?.seller_name ?? "-"}
-                          </td>
+                      {belowList.map((r: any, i: number) => {
+                        const isExpanded = expandedSellers.has(i);
+                        const snapshots: any[] = Array.isArray(r?.snapshots) ? r.snapshots : [];
+                        const hasSnapshots = snapshots.length > 0;
+                        const toggleExpand = () => {
+                          setExpandedSellers((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(i)) next.delete(i);
+                            else next.add(i);
+                            return next;
+                          });
+                        };
+
+                        const renderCardCell = (item: any, key: string) => (
                           <td style={{ padding: "8px 6px", borderBottom: "1px solid #f3f4f6" }}>
-                            {r?.platform ?? "-"}
-                          </td>
-                          <td style={{ padding: "8px 6px", borderBottom: "1px solid #f3f4f6", whiteSpace: "nowrap" }}>
-                            {fmtMoney(r?.unit_price)}
-                          </td>
-                          <td style={{ padding: "8px 6px", borderBottom: "1px solid #f3f4f6", whiteSpace: "nowrap" }}>
-                            {fmtMoney(r?.total_price)}
-                          </td>
-                          <td style={{ padding: "8px 6px", borderBottom: "1px solid #f3f4f6" }}>
-                            {r?.quantity ?? "-"}
-                          </td>
-                          <td style={{ padding: "8px 6px", borderBottom: "1px solid #f3f4f6" }}>
-                            {r?.card_html ? (
+                            {item?.card_html ? (
                               <div
-                                onClick={() => setModalData({ html: r.card_html, link: r.link })}
+                                onClick={() => setModalData({ html: item.card_html, link: item.link })}
                                 style={{
                                   width: 80,
                                   height: 60,
@@ -440,7 +438,7 @@ export default function RangeReportPage() {
                                 }}
                               >
                                 <iframe
-                                  srcDoc={r.card_html}
+                                  srcDoc={item.card_html}
                                   style={{
                                     width: "500%",
                                     height: 500,
@@ -450,7 +448,7 @@ export default function RangeReportPage() {
                                     transformOrigin: "top left",
                                   }}
                                   sandbox="allow-same-origin"
-                                  title={`evidence-thumb-${i}`}
+                                  title={`thumb-${key}`}
                                 />
                                 <div
                                   style={{
@@ -471,20 +469,88 @@ export default function RangeReportPage() {
                                   크게 보기
                                 </div>
                               </div>
-                            ) : r?.link ? (
-                              <a href={r.link} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
-                                링크
-                              </a>
-                            ) : r?.card_image_path ? (
-                              <a href={`${API_BASE_URL}/${r.card_image_path}`} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
-                                캡쳐본
-                              </a>
+                            ) : item?.link ? (
+                              <a href={item.link} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>링크</a>
+                            ) : item?.card_image_path ? (
+                              <a href={`${API_BASE_URL}/${item.card_image_path}`} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>캡쳐본</a>
                             ) : (
                               "-"
                             )}
                           </td>
-                        </tr>
-                      ))}
+                        );
+
+                        return (
+                          <React.Fragment key={i}>
+                            {/* 셀러 요약 행 */}
+                            <tr
+                              style={{ background: isExpanded ? "#f8fafc" : undefined, cursor: hasSnapshots ? "pointer" : undefined }}
+                              onClick={hasSnapshots ? toggleExpand : undefined}
+                            >
+                              <td style={{ padding: "8px 6px", borderBottom: "1px solid #f3f4f6", width: 28 }}>
+                                {hasSnapshots && (
+                                  <span style={{ fontSize: 12, color: "#6b7280" }}>
+                                    {isExpanded ? "▼" : "▶"}
+                                  </span>
+                                )}
+                              </td>
+                              <td style={{ padding: "8px 6px", borderBottom: "1px solid #f3f4f6", fontWeight: 600 }}>
+                                {r?.seller_name ?? "-"}
+                                {hasSnapshots && (
+                                  <span style={{ fontSize: 11, color: "#9ca3af", marginLeft: 4 }}>
+                                    ({snapshots.length})
+                                  </span>
+                                )}
+                              </td>
+                              <td style={{ padding: "8px 6px", borderBottom: "1px solid #f3f4f6" }}>
+                                {r?.platform ?? "-"}
+                              </td>
+                              <td style={{ padding: "8px 6px", borderBottom: "1px solid #f3f4f6", whiteSpace: "nowrap", fontWeight: 700 }}>
+                                {fmtMoney(r?.unit_price)}
+                              </td>
+                              <td style={{ padding: "8px 6px", borderBottom: "1px solid #f3f4f6", whiteSpace: "nowrap" }}>
+                                {fmtMoney(r?.total_price)}
+                              </td>
+                              <td style={{ padding: "8px 6px", borderBottom: "1px solid #f3f4f6" }}>
+                                {r?.quantity ?? "-"}
+                              </td>
+                              <td style={{ padding: "8px 6px", borderBottom: "1px solid #f3f4f6", whiteSpace: "nowrap", fontSize: 12 }}>
+                                {fmtTime(r?.time)}
+                              </td>
+                              {renderCardCell(r, `summary-${i}`)}
+                            </tr>
+
+                            {/* 스냅샷 행들 (토글 열렸을 때) */}
+                            {isExpanded && snapshots.map((s: any, si: number) => (
+                              <tr
+                                key={`${i}-${si}`}
+                                style={{ background: "#f1f5f9" }}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <td style={{ padding: "6px 6px", borderBottom: "1px solid #e2e8f0" }} />
+                                <td style={{ padding: "6px 6px", borderBottom: "1px solid #e2e8f0", fontSize: 12, color: "#64748b", paddingLeft: 20 }}>
+                                  {s?.product_name || s?.seller_name || "-"}
+                                </td>
+                                <td style={{ padding: "6px 6px", borderBottom: "1px solid #e2e8f0", fontSize: 12 }}>
+                                  {s?.platform ?? "-"}
+                                </td>
+                                <td style={{ padding: "6px 6px", borderBottom: "1px solid #e2e8f0", fontSize: 12, whiteSpace: "nowrap" }}>
+                                  {fmtMoney(s?.unit_price)}
+                                </td>
+                                <td style={{ padding: "6px 6px", borderBottom: "1px solid #e2e8f0", fontSize: 12, whiteSpace: "nowrap" }}>
+                                  {fmtMoney(s?.total_price)}
+                                </td>
+                                <td style={{ padding: "6px 6px", borderBottom: "1px solid #e2e8f0", fontSize: 12 }}>
+                                  {s?.quantity ?? "-"}
+                                </td>
+                                <td style={{ padding: "6px 6px", borderBottom: "1px solid #e2e8f0", fontSize: 11, whiteSpace: "nowrap", color: "#64748b" }}>
+                                  {fmtTime(s?.time)}
+                                </td>
+                                {renderCardCell(s, `snap-${i}-${si}`)}
+                              </tr>
+                            ))}
+                          </React.Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -728,12 +794,16 @@ export default function RangeReportPage() {
                 </button>
               </div>
             </div>
-            <div
-              dangerouslySetInnerHTML={{ __html: modalData.html }}
+            <iframe
+              srcDoc={modalData.html}
               style={{
+                width: "100%",
+                height: 560,
+                border: "none",
                 borderRadius: 8,
-                overflow: "auto",
               }}
+              sandbox="allow-same-origin allow-popups"
+              title="evidence-card-modal"
             />
           </div>
         </div>
