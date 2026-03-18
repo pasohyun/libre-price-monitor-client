@@ -567,6 +567,7 @@ export default function RangeReportPage() {
             justifyContent: "center",
             background: "rgba(0,0,0,0.6)",
             padding: 16,
+            overflowY: "scroll",
           }}
         >
           <div
