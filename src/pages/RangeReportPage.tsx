@@ -68,12 +68,17 @@ export default function RangeReportPage() {
   const [startDate, setStartDate] = useState(thirtyDaysAgoStr());
   const [endDate, setEndDate] = useState(todayStr());
   const [thresholdPrice, setThresholdPrice] = useState(85000);
+  const [priceMin, setPriceMin] = useState<number | "">("");
+  const [priceMax, setPriceMax] = useState<number | "">("");
   const [channel, setChannel] = useState<"naver" | "coupang" | "all">("naver");
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<ReportData | null>(null);
   const [modalData, setModalData] = useState<{ html: string; link?: string } | null>(null);
+
+  // 기준가 이하 리스트 필터
+  const [filterQuantity, setFilterQuantity] = useState<number | "">("");
 
 
   const onFetch = async () => {
@@ -96,9 +101,20 @@ export default function RangeReportPage() {
   };
 
   const summary = data?.summary || {};
-  const belowList: any[] = Array.isArray(data?.below_threshold_list)
+  const belowListRaw: any[] = Array.isArray(data?.below_threshold_list)
     ? data.below_threshold_list
     : [];
+
+  // 필터 + 정렬 적용
+  const belowList = belowListRaw
+    .filter((r: any) => {
+      if (priceMin !== "" && (r?.unit_price ?? 0) < priceMin) return false;
+      if (priceMax !== "" && (r?.unit_price ?? 0) > priceMax) return false;
+      if (filterQuantity !== "" && (r?.quantity ?? 0) !== filterQuantity) return false;
+      return true;
+    })
+    .sort((a: any, b: any) => (b?.unit_price ?? 0) - (a?.unit_price ?? 0));
+
   const sellerCards: any[] = Array.isArray(data?.seller_cards)
     ? data.seller_cards
     : [];
@@ -141,7 +157,7 @@ export default function RangeReportPage() {
         </div>
 
         <div>
-          <label style={{ fontSize: 12 }}>기준가</label>
+          <label style={{ fontSize: 12 }}>기준가 (API 조회용)</label>
           <input
             type="number"
             value={thresholdPrice}
@@ -303,6 +319,55 @@ export default function RangeReportPage() {
             {/* ② 기준가 이하 리스트 */}
             <div style={sectionCard}>
               <h3 style={{ marginTop: 0 }}>② 기준가 이하 리스트</h3>
+
+              {/* 필터 바 */}
+              <div
+                style={{
+                  display: "flex",
+                  gap: 12,
+                  alignItems: "end",
+                  marginBottom: 12,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div>
+                  <label style={{ fontSize: 11, color: "#6b7280" }}>단가 이상</label>
+                  <input
+                    type="number"
+                    placeholder="최소"
+                    value={priceMin}
+                    onChange={(e) => setPriceMin(e.target.value === "" ? "" : Number(e.target.value))}
+                    style={{ ...inputStyle, width: 100, padding: 6, fontSize: 13 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: "#6b7280" }}>단가 이하</label>
+                  <input
+                    type="number"
+                    placeholder="최대"
+                    value={priceMax}
+                    onChange={(e) => setPriceMax(e.target.value === "" ? "" : Number(e.target.value))}
+                    style={{ ...inputStyle, width: 100, padding: 6, fontSize: 13 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: "#6b7280" }}>수량</label>
+                  <select
+                    value={filterQuantity}
+                    onChange={(e) => setFilterQuantity(e.target.value === "" ? "" : Number(e.target.value))}
+                    style={{ ...inputStyle, width: 80, padding: 6, fontSize: 13 }}
+                  >
+                    <option value="">전체</option>
+                    {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ fontSize: 12, color: "#6b7280", paddingBottom: 4 }}>
+                  {belowList.length}건 / {belowListRaw.length}건 (단가 내림차순)
+                </div>
+              </div>
+
               {belowList.length === 0 ? (
                 <div>(기준가 이하 셀러 없음)</div>
               ) : (
