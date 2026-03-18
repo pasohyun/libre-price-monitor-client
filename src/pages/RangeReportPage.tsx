@@ -517,7 +517,7 @@ export default function RangeReportPage() {
                                     if (!point) return "";
                                     // 각 날짜의 첫 포인트에만 날짜 라벨 표시
                                     const prev = idx > 0 ? c.chart_data[idx - 1] : null;
-                                    if (!prev || prev.date !== point.date) return point.date;
+                                    if (!prev || prev.date !== point.date) return point.date.replace(/^\d{2}/, "");
                                     return "";
                                   }}
                                   interval={0}
