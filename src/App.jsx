@@ -3312,25 +3312,13 @@ export default function App() {
       setSettings((prev) => ({ ...prev, threshold: config.target_price }));
     }
 
-    const [products, coupangProducts, summary, trends, top] = await Promise.all([
+    const [products, summary, trends, top] = await Promise.all([
       fetchLatestProducts(),
-      fetchLatestProducts("coupang"),
       fetchTrackedMallsSummary(),
       fetchTrackedMallsTrends(90),
       fetchMallsTop(10),
     ]);
-    // naver(기본) + coupang 데이터를 합쳐서 저장
-    const mergedProducts = {
-      ...products,
-      data: [
-        ...(products.data || []),
-        ...(coupangProducts.data || []).filter(
-          (cp) => !(products.data || []).some((p) => p.id === cp.id),
-        ),
-      ],
-    };
-    mergedProducts.count = mergedProducts.data.length;
-    setProductsData(mergedProducts);
+    setProductsData(products);
     setMallsSummary(summary);
     setMallsTrends(trends);
     setMallsTop(top);
@@ -3541,22 +3529,9 @@ export default function App() {
         ),
       }));
       // 서버 저장 결과를 다시 읽어와 새로고침 후에도 동일하게 보이도록 동기화
-      const [latest, latestCoupang] = await Promise.all([
-        fetchLatestProducts(),
-        fetchLatestProducts("coupang"),
-      ]);
+      const latest = await fetchLatestProducts();
       if (latest?.data) {
-        const merged = {
-          ...latest,
-          data: [
-            ...(latest.data || []),
-            ...(latestCoupang?.data || []).filter(
-              (cp) => !(latest.data || []).some((p) => p.id === cp.id),
-            ),
-          ],
-        };
-        merged.count = merged.data.length;
-        setProductsData(merged);
+        setProductsData(latest);
       }
     } else if (result?.message) {
       window.alert(`이미지 생성 실패: ${result.message}`);
@@ -3567,23 +3542,8 @@ export default function App() {
   const handleManualConfirmQuantity = async (productId, quantity) => {
     const result = await confirmManualQuantity(productId, quantity);
     if (result?.updated) {
-      const [latest, latestCoupang] = await Promise.all([
-        fetchLatestProducts(),
-        fetchLatestProducts("coupang"),
-      ]);
-      if (latest?.data) {
-        const merged = {
-          ...latest,
-          data: [
-            ...(latest.data || []),
-            ...(latestCoupang?.data || []).filter(
-              (cp) => !(latest.data || []).some((p) => p.id === cp.id),
-            ),
-          ],
-        };
-        merged.count = merged.data.length;
-        setProductsData(merged);
-      }
+      const latest = await fetchLatestProducts();
+      if (latest?.data) setProductsData(latest);
     }
     return result;
   };
