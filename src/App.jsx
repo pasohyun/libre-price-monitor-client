@@ -2673,6 +2673,7 @@ function ChannelSellers({
   const [marketFilter, setMarketFilter] = useState("all");
   const [channelSummary, setChannelSummary] = useState(null);
   const [channelTrends, setChannelTrends] = useState(null);
+  const fixedNaverSellerOrder = ["글루코핏", "닥다몰", "레디투힐", "메디프라"];
 
   // 채널별 데이터 로드 (naver는 부모에서 받은 데이터 사용, coupang은 별도 fetch)
   useEffect(() => {
@@ -2698,16 +2699,68 @@ function ChannelSellers({
 
   // API 데이터가 있으면 사용, 없으면 offers에서 동적 추출
   const sellers = useMemo(() => {
-    // tracked-malls summary API 데이터 사용
-    if (mallsSummary?.data?.length > 0) {
-      return mallsSummary.data.map((mall) => ({
+    // 네이버: tracked-malls summary API 데이터 사용
+    if (channelKey === "naver" && mallsSummary?.data?.length > 0) {
+      const summarySellers = mallsSummary.data.map((mall) => ({
         seller: mall.mall_name,
         currentConsideredUnitPrice: mall.current_price,
         last7dRange: mall.change_7d || 0,
         belowCount: mall.below_target_count || 0,
         min_price_7d: mall.min_price_7d,
         max_price_7d: mall.max_price_7d,
+        priceDrop: Math.max(
+          0,
+          (Number(mall.max_price_7d) || Number(mall.current_price) || 0) -
+            (Number(mall.current_price) || 0),
+        ),
       }));
+
+      // 주요 4개 외의 네이버 셀러도 항상 보이도록 offers 기반 동적 셀러를 병합한다.
+      const threshold = Number(settings.threshold) || Infinity;
+      const naverOfferMap = new Map();
+      offers
+        .filter((o) => o.channel === "naver")
+        .forEach((o) => {
+          const name = (o.seller || "").trim();
+          if (!name || name === "-") return;
+          if (!naverOfferMap.has(name)) {
+            naverOfferMap.set(name, { prices: [], belowCount: 0 });
+          }
+          const entry = naverOfferMap.get(name);
+          entry.prices.push(o.unitPrice || 0);
+          if (o.unitPrice <= threshold) entry.belowCount++;
+        });
+
+      const offerSellers = Array.from(naverOfferMap.entries()).map(([name, data]) => {
+        const prices = data.prices.filter((p) => p > 0);
+        const currentPrice = prices[prices.length - 1] || 0;
+        const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
+        const maxPrice = prices.length > 0 ? Math.max(...prices) : 0;
+        return {
+          seller: name,
+          currentConsideredUnitPrice: currentPrice,
+          last7dRange: maxPrice - minPrice,
+          belowCount: data.belowCount,
+          min_price_7d: minPrice,
+          max_price_7d: maxPrice,
+          priceDrop: Math.max(0, maxPrice - currentPrice),
+        };
+      });
+
+      const mergedByDisplayName = new Map();
+      [...summarySellers, ...offerSellers].forEach((seller) => {
+        const displayName = displaySellerName(channelKey, seller.seller);
+        if (!displayName) return;
+        if (!mergedByDisplayName.has(displayName)) {
+          mergedByDisplayName.set(displayName, seller);
+          return;
+        }
+        const prev = mergedByDisplayName.get(displayName);
+        if ((seller.priceDrop || 0) > (prev.priceDrop || 0)) {
+          mergedByDisplayName.set(displayName, seller);
+        }
+      });
+      return Array.from(mergedByDisplayName.values());
     }
 
     // API 데이터 없으면 offers에서 해당 채널의 판매처를 동적 추출
@@ -2738,6 +2791,9 @@ function ChannelSellers({
             currentConsideredUnitPrice: currentPrice,
             last7dRange: maxPrice - minPrice,
             belowCount: data.belowCount,
+            min_price_7d: minPrice,
+            max_price_7d: maxPrice,
+            priceDrop: Math.max(0, maxPrice - currentPrice),
           };
         })
         .sort(
@@ -2755,6 +2811,47 @@ function ChannelSellers({
     if (marketFilter === "all") return sellers;
     return sellers.filter((s) => s.seller.includes(marketFilter));
   }, [sellers, marketFilter]);
+
+  const dedupedDisplaySellers = useMemo(() => {
+    const map = new Map();
+    filteredSellers.forEach((seller) => {
+      const displayName = displaySellerName(channelKey, seller.seller);
+      if (!displayName) return;
+      const prev = map.get(displayName);
+      if (!prev) {
+        map.set(displayName, seller);
+        return;
+      }
+      // 같은 표시명(예: 글루어트/글루코핏)이 섞여 들어오는 경우 하락폭이 큰 값을 우선 사용
+      if ((seller.priceDrop || 0) > (prev.priceDrop || 0)) {
+        map.set(displayName, seller);
+      }
+    });
+    return Array.from(map.values());
+  }, [filteredSellers, channelKey]);
+
+  const fixedNaverSellers = useMemo(() => {
+    if (channelKey !== "naver") return [];
+    return fixedNaverSellerOrder
+      .map((displayName) =>
+        dedupedDisplaySellers.find(
+          (seller) => displaySellerName(channelKey, seller.seller) === displayName,
+        ),
+      )
+      .filter(Boolean);
+  }, [channelKey, dedupedDisplaySellers]);
+
+  const otherNaverSellers = useMemo(() => {
+    if (channelKey !== "naver") return [];
+    const fixedNameSet = new Set(fixedNaverSellerOrder);
+    return dedupedDisplaySellers
+      .filter((seller) => !fixedNameSet.has(displaySellerName(channelKey, seller.seller)))
+      .sort((a, b) => {
+        const dropDiff = (b.priceDrop || 0) - (a.priceDrop || 0);
+        if (dropDiff !== 0) return dropDiff;
+        return (a.currentConsideredUnitPrice || 0) - (b.currentConsideredUnitPrice || 0);
+      });
+  }, [channelKey, dedupedDisplaySellers]);
 
   return (
     <div className="space-y-6">
@@ -2850,7 +2947,7 @@ function ChannelSellers({
       </div>
 
       <div className="grid grid-cols-12 gap-4">
-        {filteredSellers.map((s) => (
+        {(channelKey === "naver" ? fixedNaverSellers : dedupedDisplaySellers).map((s) => (
           <button
             key={s.seller}
             type="button"
@@ -2895,6 +2992,60 @@ function ChannelSellers({
           </button>
         ))}
       </div>
+
+      {channelKey === "naver" && (
+        <>
+          <div className="pt-1">
+            <div className="text-sm text-slate-500">기타 네이버 판매처 (가격 하락순)</div>
+          </div>
+          <div className="grid grid-cols-12 gap-4">
+            {otherNaverSellers.map((s) => (
+              <button
+                key={`other-${s.seller}`}
+                type="button"
+                className="col-span-12 md:col-span-6 lg:col-span-3 text-left"
+                onClick={() => onSelectSeller(s.seller)}
+              >
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-300">
+                  <div className="text-sm text-slate-500">판매처</div>
+                  <div className="mt-1 text-lg font-semibold text-slate-900">
+                    {displaySellerName(channelKey, s.seller)}
+                  </div>
+
+                  <div className="mt-3 space-y-1 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">현재 단가(가정)</span>
+                      <span className="font-semibold">
+                        {formatKRW(s.currentConsideredUnitPrice)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">최근 7일 변동폭</span>
+                      <span>{formatKRW(s.last7dRange)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">기준가 이하 횟수</span>
+                      <span>
+                        {s.belowCount > 0 ? (
+                          <Badge tone="danger">{s.belowCount}회</Badge>
+                        ) : (
+                          <Badge tone="ok">0회</Badge>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    <span className="text-sm font-semibold text-slate-900 underline">
+                      세부 보기
+                    </span>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
