@@ -2847,6 +2847,9 @@ function ChannelSellers({
     return dedupedDisplaySellers
       .filter((seller) => !fixedNameSet.has(displaySellerName(channelKey, seller.seller)))
       .sort((a, b) => {
+        // 말썽 판매처(기준가 이하 발생 횟수 많은 곳)를 우선 노출한다.
+        const troubleDiff = (b.belowCount || 0) - (a.belowCount || 0);
+        if (troubleDiff !== 0) return troubleDiff;
         const dropDiff = (b.priceDrop || 0) - (a.priceDrop || 0);
         if (dropDiff !== 0) return dropDiff;
         return (a.currentConsideredUnitPrice || 0) - (b.currentConsideredUnitPrice || 0);
@@ -2962,7 +2965,7 @@ function ChannelSellers({
 
               <div className="mt-3 space-y-1 text-sm">
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-500">현재 단가(가정)</span>
+                  <span className="text-slate-500">현재 단가(최근 수집값)</span>
                   <span className="font-semibold">
                     {formatKRW(s.currentConsideredUnitPrice)}
                   </span>
@@ -3014,7 +3017,7 @@ function ChannelSellers({
 
                   <div className="mt-3 space-y-1 text-sm">
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-500">현재 단가(가정)</span>
+                      <span className="text-slate-500">현재 단가(최근 수집값)</span>
                       <span className="font-semibold">
                         {formatKRW(s.currentConsideredUnitPrice)}
                       </span>
@@ -3366,7 +3369,7 @@ function SellerDetail({
         <Table
           columns={columns}
           rows={rows}
-          emptyText="해당 판매처의 수집 데이터가 없습니다."
+          emptyText="기준가 이하 데이터가 없습니다."
         />
       </Card>
     </div>
