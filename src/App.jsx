@@ -1184,6 +1184,14 @@ const SELLER_DB_ALIASES = {
   글루코핏: "글루어트",
   닥다몰: "무화당",
 };
+const NAVER_FIXED_SELLER_DEFS = [
+  { label: "랜식(글핏몰)", keys: ["랜식", "글핏몰", "글루코핏", "글루어트"] },
+  { label: "닥터다이어리(닥다몰)", keys: ["닥다몰"] },
+  { label: "닥터다이어리(무화당)", keys: ["무화당"] },
+  { label: "필라이즈", keys: ["필라이즈"] },
+  { label: "레디투힐", keys: ["레디투힐"] },
+  { label: "메디프라", keys: ["메디프라"] },
+];
 const getSellerDisplayAlias = (name) =>
   SELLER_DISPLAY_ALIASES[String(name || "").trim()] || String(name || "").trim();
 const getSellerDataKeys = (displayName) => {
@@ -2673,7 +2681,6 @@ function ChannelSellers({
   const [marketFilter, setMarketFilter] = useState("all");
   const [channelSummary, setChannelSummary] = useState(null);
   const [channelTrends, setChannelTrends] = useState(null);
-  const fixedNaverSellerOrder = ["글루코핏", "닥다몰", "레디투힐", "메디프라"];
 
   // 채널별 데이터 로드 (naver는 부모에서 받은 데이터 사용, coupang은 별도 fetch)
   useEffect(() => {
@@ -2832,20 +2839,29 @@ function ChannelSellers({
 
   const fixedNaverSellers = useMemo(() => {
     if (channelKey !== "naver") return [];
-    return fixedNaverSellerOrder
-      .map((displayName) =>
-        dedupedDisplaySellers.find(
-          (seller) => displaySellerName(channelKey, seller.seller) === displayName,
-        ),
-      )
+    return NAVER_FIXED_SELLER_DEFS
+      .map((def) => {
+        const matched = dedupedDisplaySellers.find((seller) => {
+          const raw = String(seller.seller || "").trim();
+          const display = displaySellerName(channelKey, seller.seller);
+          return def.keys.some((key) => key === raw || key === display);
+        });
+        return matched ? { ...matched, __fixedLabel: def.label } : null;
+      })
       .filter(Boolean);
   }, [channelKey, dedupedDisplaySellers]);
 
   const otherNaverSellers = useMemo(() => {
     if (channelKey !== "naver") return [];
-    const fixedNameSet = new Set(fixedNaverSellerOrder);
+    const fixedKeySet = new Set(
+      NAVER_FIXED_SELLER_DEFS.flatMap((def) => def.keys.map((k) => String(k).trim())),
+    );
     return dedupedDisplaySellers
-      .filter((seller) => !fixedNameSet.has(displaySellerName(channelKey, seller.seller)))
+      .filter((seller) => {
+        const raw = String(seller.seller || "").trim();
+        const display = displaySellerName(channelKey, seller.seller);
+        return !fixedKeySet.has(raw) && !fixedKeySet.has(display);
+      })
       .sort((a, b) => {
         // 말썽 판매처(기준가 이하 발생 횟수 많은 곳)를 우선 노출한다.
         const troubleDiff = (b.belowCount || 0) - (a.belowCount || 0);
@@ -2855,6 +2871,30 @@ function ChannelSellers({
         return (a.currentConsideredUnitPrice || 0) - (b.currentConsideredUnitPrice || 0);
       });
   }, [channelKey, dedupedDisplaySellers]);
+
+  const naverMajorTrend = useMemo(() => {
+    if (channelKey !== "naver" || !mallsTrends?.data?.length) {
+      return { data: [], malls: [] };
+    }
+    const mappedRows = (mallsTrends.data || []).map((row) => {
+      const x = row?.x || row?.date;
+      const mapped = { x };
+      NAVER_FIXED_SELLER_DEFS.forEach((def) => {
+        const values = def.keys
+          .map((key) => row?.[key])
+          .filter((v) => typeof v === "number" && !Number.isNaN(v));
+        mapped[def.label] = values.length > 0 ? Math.min(...values) : null;
+      });
+      return mapped;
+    });
+    return {
+      data: buildContinuousMallTrendData(
+        mappedRows,
+        NAVER_FIXED_SELLER_DEFS.map((def) => def.label),
+      ),
+      malls: NAVER_FIXED_SELLER_DEFS.map((def) => def.label),
+    };
+  }, [channelKey, mallsTrends]);
 
   return (
     <div className="space-y-6">
@@ -2929,7 +2969,13 @@ function ChannelSellers({
 
         <div className="col-span-12 lg:col-span-8">
           <Card title="채널 판매가 추이">
-            {mallsTrends?.data?.length > 0 ? (
+            {channelKey === "naver" && naverMajorTrend.data.length > 0 ? (
+              <PriceTrend
+                mode={mode}
+                data={naverMajorTrend.data}
+                malls={naverMajorTrend.malls}
+              />
+            ) : mallsTrends?.data?.length > 0 ? (
               <PriceTrend
                 mode={mode}
                 data={buildContinuousMallTrendData(
@@ -2960,7 +3006,7 @@ function ChannelSellers({
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-300">
               <div className="text-sm text-slate-500">판매처</div>
               <div className="mt-1 text-lg font-semibold text-slate-900">
-                {displaySellerName(channelKey, s.seller)}
+                {s.__fixedLabel || displaySellerName(channelKey, s.seller)}
               </div>
 
               <div className="mt-3 space-y-1 text-sm">
