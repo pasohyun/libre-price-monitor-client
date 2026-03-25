@@ -1177,12 +1177,17 @@ const clampNumber = (v, min, max) => {
 
 const channelLabel = (key) => CHANNELS.find((c) => c.key === key)?.label ?? key;
 const SELLER_DISPLAY_ALIASES = {
-  글루어트: "글루코핏",
-  무화당: "닥다몰",
+  랜식: "랜식(글핏몰)",
+  글핏몰: "랜식(글핏몰)",
+  글루코핏: "랜식(글핏몰)",
+  글루어트: "랜식(글핏몰)",
+  닥다몰: "닥터다이어리(닥다몰)",
+  무화당: "닥터다이어리(무화당)",
 };
 const SELLER_DB_ALIASES = {
-  글루코핏: "글루어트",
-  닥다몰: "무화당",
+  "랜식(글핏몰)": "글루코핏",
+  "닥터다이어리(닥다몰)": "닥다몰",
+  "닥터다이어리(무화당)": "무화당",
 };
 const NAVER_FIXED_SELLER_DEFS = [
   { label: "랜식(글핏몰)", keys: ["랜식", "글핏몰", "글루코핏", "글루어트"] },
