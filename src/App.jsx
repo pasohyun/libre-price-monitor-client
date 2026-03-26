@@ -3798,19 +3798,23 @@ function SellerDetail({
     return timeline;
   }, [timeline, filteredTimeline, filterTime, filterPack]);
 
-  const rows = filteredTimeline
-    .slice()
-    .sort((a, b) => {
-      const aMs = parseDateLike(a.capturedAt)?.getTime() ?? 0;
-      const bMs = parseDateLike(b.capturedAt)?.getTime() ?? 0;
-      return bMs - aMs;
-    })
-    .map((t, idx) => ({
-      ...t,
-      productId: t.id ?? null,
-      capturedAt: formatDateTimeKST(t.capturedAt),
-      __rowKey: `${channelKey}-${sellerName}-${idx}`,
-    }));
+  const rows = useMemo(
+    () =>
+      filteredTimeline
+        .slice()
+        .sort((a, b) => {
+          const aMs = parseDateLike(a.capturedAt)?.getTime() ?? 0;
+          const bMs = parseDateLike(b.capturedAt)?.getTime() ?? 0;
+          return bMs - aMs;
+        })
+        .map((t, idx) => ({
+          ...t,
+          productId: t.id ?? null,
+          capturedAt: formatDateTimeKST(t.capturedAt),
+          __rowKey: `${channelKey}-${sellerName}-${idx}`,
+        })),
+    [filteredTimeline, channelKey, sellerName],
+  );
 
   useEffect(() => {
     const validIdSet = new Set(
@@ -3821,6 +3825,13 @@ function SellerDetail({
       prev.forEach((id) => {
         if (validIdSet.has(id)) next.add(id);
       });
+      if (next.size === prev.size) {
+        let unchanged = true;
+        prev.forEach((id) => {
+          if (!next.has(id)) unchanged = false;
+        });
+        if (unchanged) return prev;
+      }
       return next;
     });
   }, [rows]);
