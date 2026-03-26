@@ -1191,11 +1191,11 @@ const SELLER_DB_ALIASES = {
   "닥터다이어리(무화당)": ["무화당"],
 };
 const NAVER_FIXED_SELLER_DEFS = [
-  { label: "랜식(글핏몰)", keys: ["랜식", "글핏몰", "글루코핏", "글루어트"] },
   { label: "닥터다이어리(닥다몰)", keys: ["닥다몰"] },
-  { label: "필라이즈", keys: ["필라이즈"] },
+  { label: "랜식(글핏몰)", keys: ["랜식", "글핏몰", "글루코핏", "글루어트"] },
   { label: "레디투힐", keys: ["레디투힐"] },
   { label: "메디프라", keys: ["메디프라"] },
+  { label: "필라이즈", keys: ["필라이즈"] },
 ];
 const NAVER_FIXED_SELLER_LABELS = NAVER_FIXED_SELLER_DEFS.map((def) => def.label);
 const NAVER_FIXED_SELLER_DEFAULT = {
@@ -2770,21 +2770,17 @@ function ChannelSellers({
 
   // 채널별 데이터 로드 (naver는 부모에서 받은 데이터 사용, coupang은 별도 fetch)
   useEffect(() => {
-    if (channelKey === "naver") {
-      setChannelSummary(parentMallsSummary);
-      setChannelTrends(parentMallsTrends);
-    } else {
-      // coupang 등 다른 채널은 channel 파라미터로 별도 fetch
-      async function loadChannelData() {
-        const [summary, trends] = await Promise.all([
-          fetchTrackedMallsSummary(channelKey),
-          fetchTrackedMallsTrends(90, channelKey),
-        ]);
-        setChannelSummary(summary);
-        setChannelTrends(trends);
-      }
-      loadChannelData();
+    // 모든 채널은 channel 파라미터로 전용 summary/trends를 조회한다.
+    // 네이버를 부모 공용 trends로 쓰면 채널 혼합/추적몰 제한 영향으로 라인이 일부만 보일 수 있다.
+    async function loadChannelData() {
+      const [summary, trends] = await Promise.all([
+        fetchTrackedMallsSummary(channelKey),
+        fetchTrackedMallsTrends(90, channelKey),
+      ]);
+      setChannelSummary(summary || parentMallsSummary);
+      setChannelTrends(trends || parentMallsTrends);
     }
+    loadChannelData();
   }, [channelKey, parentMallsSummary, parentMallsTrends]);
 
   const mallsSummary = channelSummary;
