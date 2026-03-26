@@ -2394,6 +2394,14 @@ function MainDashboard({
   const [activeSeriesIds, setActiveSeriesIds] = useState(() =>
     new Set(allSeriesDefs.map((s) => s.id)),
   );
+  const naverSeriesDefs = useMemo(
+    () => allSeriesDefs.filter((s) => s.channel === "naver"),
+    [allSeriesDefs],
+  );
+  const coupangSeriesDefs = useMemo(
+    () => allSeriesDefs.filter((s) => s.channel === "coupang"),
+    [allSeriesDefs],
+  );
   const OFFERS_PER_PAGE = 20;
 
   useEffect(() => {
@@ -2773,33 +2781,78 @@ function MainDashboard({
               data={trendMode === "daily" ? mainTrendData.daily : mainTrendData.monthly}
               malls={mainTrendData.malls || []}
             />
-            <div className="mt-3 flex flex-wrap gap-2">
-              {allSeriesDefs.map((series) => {
-                const active = activeSeriesIds.has(series.id);
-                return (
-                  <Chip
-                    key={series.id}
-                    active={active}
-                    onClick={() =>
-                      setActiveSeriesIds((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(series.id)) next.delete(series.id);
-                        else next.add(series.id);
-                        return next;
-                      })
-                    }
-                  >
-                    {series.label}
-                  </Chip>
-                );
-              })}
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="text-xs font-semibold text-slate-600">그래프 라인 선택</div>
+              <div className="mt-2">
+                <div className="mb-1 text-xs text-slate-500">네이버</div>
+                <div className="flex flex-wrap gap-2">
+                  {naverSeriesDefs.map((series) => {
+                    const active = activeSeriesIds.has(series.id);
+                    return (
+                      <button
+                        key={series.id}
+                        type="button"
+                        onClick={() =>
+                          setActiveSeriesIds((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(series.id)) next.delete(series.id);
+                            else next.add(series.id);
+                            return next;
+                          })
+                        }
+                        className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                          active
+                            ? "border-slate-900 bg-slate-900 text-white"
+                            : "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
+                        }`}
+                      >
+                        {series.seller}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="mt-3">
+                <div className="mb-1 text-xs text-slate-500">쿠팡</div>
+                <div className="flex flex-wrap gap-2">
+                  {coupangSeriesDefs.map((series) => {
+                    const active = activeSeriesIds.has(series.id);
+                    return (
+                      <button
+                        key={series.id}
+                        type="button"
+                        onClick={() =>
+                          setActiveSeriesIds((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(series.id)) next.delete(series.id);
+                            else next.add(series.id);
+                            return next;
+                          })
+                        }
+                        className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                          active
+                            ? "border-slate-900 bg-slate-900 text-white"
+                            : "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
+                        }`}
+                      >
+                        {series.seller}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
               {CHANNELS.map((c) => (
-                <Chip
+                <button
                   key={c.key}
-                  active={false}
+                  type="button"
                   onClick={() => c.active && onGoChannel(c.key)}
+                  className={`rounded-lg border px-3 py-1.5 text-sm transition ${
+                    c.active
+                      ? "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                      : "border-slate-200 bg-slate-100 text-slate-400"
+                  }`}
                 >
                   {c.label} 주요 셀러 보기
                   {!c.active && (
@@ -2807,7 +2860,7 @@ function MainDashboard({
                       (준비중)
                     </span>
                   )}
-                </Chip>
+                </button>
               ))}
             </div>
           </Card>
