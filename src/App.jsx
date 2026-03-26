@@ -1257,42 +1257,92 @@ function Stat({ label, value, sub, highlight }) {
   );
 }
 
-function Table({ columns, rows, emptyText = "데이터가 없습니다." }) {
+function Table({ columns, rows, emptyText = "데이터가 없습니다.", pageSize = 0 }) {
+  const [page, setPage] = useState(0);
+  const isPaged = pageSize > 0 && rows.length > pageSize;
+  const totalPages = isPaged ? Math.ceil(rows.length / pageSize) : 1;
+  const displayRows = isPaged ? rows.slice(page * pageSize, (page + 1) * pageSize) : rows;
+
+  // 필터 등으로 rows가 바뀌면 첫 페이지로 리셋
+  useEffect(() => { setPage(0); }, [rows.length]);
+
   return (
-    <div className="overflow-x-auto rounded-2xl border border-slate-200">
-      <table className="min-w-full text-sm">
-        <thead className="bg-slate-50 text-slate-600">
-          <tr>
-            {columns.map((c) => (
-              <th key={c.key} className="px-4 py-3 text-left font-medium">
-                {c.header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 ? (
+    <div>
+      <div className="overflow-x-auto rounded-2xl border border-slate-200">
+        <table className="min-w-full text-sm">
+          <thead className="bg-slate-50 text-slate-600">
             <tr>
-              <td className="px-4 py-6 text-slate-500" colSpan={columns.length}>
-                {emptyText}
-              </td>
+              {columns.map((c) => (
+                <th key={c.key} className="px-4 py-3 text-left font-medium">
+                  {c.header}
+                </th>
+              ))}
             </tr>
-          ) : (
-            rows.map((r) => (
-              <tr key={r.__rowKey} className="border-t border-slate-100">
-                {columns.map((c) => (
-                  <td
-                    key={c.key}
-                    className="px-4 py-3 align-top text-slate-800"
-                  >
-                    {c.render ? c.render(r) : r[c.key]}
-                  </td>
-                ))}
+          </thead>
+          <tbody>
+            {displayRows.length === 0 ? (
+              <tr>
+                <td className="px-4 py-6 text-slate-500" colSpan={columns.length}>
+                  {emptyText}
+                </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            ) : (
+              displayRows.map((r) => (
+                <tr key={r.__rowKey} className="border-t border-slate-100">
+                  {columns.map((c) => (
+                    <td
+                      key={c.key}
+                      className="px-4 py-3 align-top text-slate-800"
+                    >
+                      {c.render ? c.render(r) : r[c.key]}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+      {isPaged && (
+        <div className="mt-3 flex items-center justify-center gap-2">
+          <button
+            type="button"
+            disabled={page === 0}
+            onClick={() => setPage(0)}
+            className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            «
+          </button>
+          <button
+            type="button"
+            disabled={page === 0}
+            onClick={() => setPage((p) => p - 1)}
+            className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            ‹
+          </button>
+          <span className="px-3 text-sm text-slate-600">
+            {page + 1} / {totalPages}
+          </span>
+          <button
+            type="button"
+            disabled={page >= totalPages - 1}
+            onClick={() => setPage((p) => p + 1)}
+            className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            ›
+          </button>
+          <button
+            type="button"
+            disabled={page >= totalPages - 1}
+            onClick={() => setPage(totalPages - 1)}
+            className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            »
+          </button>
+          <span className="ml-2 text-xs text-slate-400">총 {rows.length}건</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -3121,6 +3171,9 @@ function SellerDetail({
   const [manualSubmitting, setManualSubmitting] = useState(false);
   const [timelineData, setTimelineData] = useState([]);
   const [timelineLoading, setTimelineLoading] = useState(true);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filterTime, setFilterTime] = useState("all");
+  const [filterPack, setFilterPack] = useState("all");
 
   // API에서 셀러 타임라인 데이터 로드
   useEffect(() => {
@@ -3147,14 +3200,41 @@ function SellerDetail({
     return Math.round(sum / timeline.length);
   }, [timeline]);
 
-  // 기준가 이하인 항목만 필터링
+  // 시간/수량 필터 + 기준가 이하 필터링
   const filteredTimeline = useMemo(() => {
     const thr =
       typeof settings.threshold === "string" && settings.threshold === ""
         ? Infinity
         : Number(settings.threshold) || Infinity;
-    return timeline.filter((t) => t.unitPrice <= thr);
-  }, [timeline, settings.threshold]);
+    return timeline.filter((t) => {
+      if (t.unitPrice > thr) return false;
+      if (filterTime !== "all") {
+        const hour = t.time ? t.time.split(":")[0] : null;
+        if (hour !== filterTime) return false;
+      }
+      if (filterPack !== "all") {
+        if (t.pack !== Number(filterPack)) return false;
+      }
+      return true;
+    });
+  }, [timeline, settings.threshold, filterTime, filterPack]);
+
+  // 그래프용 데이터: 필터 미적용 시 일별 최저가, 필터 적용 시 필터된 전체
+  const chartTimeline = useMemo(() => {
+    const isFiltered = filterTime !== "all" || filterPack !== "all";
+    if (isFiltered) return filteredTimeline;
+    // 필터 없을 때: 일별 최저가만
+    const dailyBest = {};
+    for (const t of timeline) {
+      const dateKey = t.date || (t.capturedAt ? t.capturedAt.slice(0, 10) : "");
+      if (!dailyBest[dateKey] || t.unitPrice < dailyBest[dateKey].unitPrice) {
+        dailyBest[dateKey] = t;
+      }
+    }
+    return Object.values(dailyBest).sort((a, b) =>
+      (a.capturedAt || "").localeCompare(b.capturedAt || "")
+    );
+  }, [timeline, filteredTimeline, filterTime, filterPack]);
 
   const rows = filteredTimeline
     .slice()
@@ -3409,18 +3489,82 @@ function SellerDetail({
           >
             <SingleSellerPriceTrend
               mode={mode}
-              timeline={timeline}
+              timeline={chartTimeline}
               sellerName={sellerName}
             />
           </Card>
         </div>
       </div>
 
-      <Card title="판매정보 + 캡처본(타임라인)">
+      <Card
+        title="판매정보 + 캡처본(타임라인)"
+        right={
+          <button
+            type="button"
+            onClick={() => setFilterOpen((v) => !v)}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
+              filterTime !== "all" || filterPack !== "all"
+                ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            <span>필터</span>
+            {(filterTime !== "all" || filterPack !== "all") && (
+              <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] text-white">
+                {(filterTime !== "all" ? 1 : 0) + (filterPack !== "all" ? 1 : 0)}
+              </span>
+            )}
+            <span className="text-xs">{filterOpen ? "▲" : "▼"}</span>
+          </button>
+        }
+      >
+        {filterOpen && (
+          <div className="mb-4 flex flex-wrap items-center gap-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-slate-600">시간</span>
+              <select
+                value={filterTime}
+                onChange={(e) => setFilterTime(e.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+              >
+                <option value="all">전체</option>
+                {["00","01","02","03","04","05","06","07","08","09","10","11","12","13","14","15","16","17","18","19","20","21","22","23"].map((h) => (
+                  <option key={h} value={h}>{h}시</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-slate-600">수량</span>
+              <select
+                value={filterPack}
+                onChange={(e) => setFilterPack(e.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+              >
+                <option value="all">전체</option>
+                {[1,2,3,4,5,6,7].map((n) => (
+                  <option key={n} value={n}>{n}개</option>
+                ))}
+              </select>
+            </div>
+            {(filterTime !== "all" || filterPack !== "all") && (
+              <button
+                type="button"
+                onClick={() => { setFilterTime("all"); setFilterPack("all"); }}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100"
+              >
+                초기화
+              </button>
+            )}
+            <span className="text-xs text-slate-400">
+              {filteredTimeline.length}건
+            </span>
+          </div>
+        )}
         <Table
           columns={columns}
           rows={rows}
           emptyText="기준가 이하 데이터가 없습니다."
+          pageSize={20}
         />
       </Card>
     </div>
