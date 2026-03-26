@@ -1118,6 +1118,19 @@ const formatKRW = (n) => {
   if (typeof n !== "number" || Number.isNaN(n)) return "-";
   return n.toLocaleString("ko-KR") + "원";
 };
+const getPriceLevel = (price, threshold, nearGap = 2000) => {
+  const p = Number(price);
+  const t = Number(threshold);
+  if (!Number.isFinite(p) || !Number.isFinite(t)) return "normal";
+  if (p <= t) return "danger";
+  if (p <= t + nearGap) return "warning";
+  return "normal";
+};
+const getPriceTextClass = (level) => {
+  if (level === "danger") return "text-red-700";
+  if (level === "warning") return "text-amber-700";
+  return "text-slate-900";
+};
 
 const parseDateLike = (v) => {
   if (!v) return null;
@@ -1951,12 +1964,6 @@ function SingleSellerPriceTrend({ mode, timeline, sellerName, height = 240 }) {
     };
   }, [chartData]);
 
-  const dailyLabelStep = useMemo(() => {
-    // 일별 라벨은 기울임 표시를 전제로 최대 18개 정도까지 보여준다.
-    if (mode !== "daily") return 1;
-    return Math.max(1, Math.ceil(chartData.length / 18));
-  }, [mode, chartData.length]);
-
   if (chartData.length === 0) {
     return (
       <div className="h-[260px] flex items-center justify-center text-slate-500">
@@ -1988,8 +1995,6 @@ function SingleSellerPriceTrend({ mode, timeline, sellerName, height = 240 }) {
               tickFormatter: (idx) => {
                 const point = chartData[idx];
                 if (!point) return "";
-                const isLast = idx === chartData.length - 1;
-                if (!isLast && idx % dailyLabelStep !== 0) return "";
                 const prev = idx > 0 ? chartData[idx - 1] : null;
                 if (!prev || prev.x !== point.x) return point.x;
                 return "";
@@ -2643,13 +2648,16 @@ function MainDashboard({
           ? safeSettings.threshold
           : Infinity;
         const diff = thr - r.unitPrice;
+        const level = getPriceLevel(r.unitPrice, thr);
         const needsCheck =
           r.calcMethod === "확인필요" ||
           r.calcMethod === "가격역산(보정)" ||
           r.calcMethod === "텍스트분석(범위초과)";
         return (
           <div className="space-y-1">
-            <div className="font-semibold">{formatKRW(r.unitPrice)}</div>
+            <div className={`font-semibold ${getPriceTextClass(level)}`}>
+              {formatKRW(r.unitPrice)}
+            </div>
             {needsCheck && (
               <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-2 py-1">
                 <div className="flex flex-wrap items-center gap-1.5 text-xs">
@@ -3620,7 +3628,11 @@ function ChannelSellers({
               <div className="mt-3 space-y-1 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-slate-500">현재 단가(최근 수집값)</span>
-                  <span className="font-semibold">
+                  <span
+                    className={`font-semibold ${getPriceTextClass(
+                      getPriceLevel(s.currentConsideredUnitPrice, settings.threshold),
+                    )}`}
+                  >
                     {formatKRW(s.currentConsideredUnitPrice)}
                   </span>
                 </div>
@@ -3672,7 +3684,11 @@ function ChannelSellers({
                   <div className="mt-3 space-y-1 text-sm">
                     <div className="flex items-center justify-between">
                       <span className="text-slate-500">현재 단가(최근 수집값)</span>
-                      <span className="font-semibold">
+                      <span
+                        className={`font-semibold ${getPriceTextClass(
+                          getPriceLevel(s.currentConsideredUnitPrice, settings.threshold),
+                        )}`}
+                      >
                         {formatKRW(s.currentConsideredUnitPrice)}
                       </span>
                     </div>
