@@ -1719,29 +1719,40 @@ function SingleSellerPriceTrend({ mode, timeline, sellerName, height = 240 }) {
     if (!timeline || timeline.length === 0) return [];
 
     if (mode === "daily") {
-      // 크롤링 시점별 개별 포인트 표시
+      // 크롤링 시점별 포인트 생성
       const points = timeline
         .map((item) => {
           const date = parseDateLike(item.capturedAt);
           if (!date) return null;
           const dateKey = `${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}`;
           const timeKey = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+          const slotKey = `${dateKey}_${timeKey}`;
           return {
             _ts: date.getTime(),
             dateKey,
             timeKey,
+            slotKey,
             price: item.unitPrice,
           };
         })
         .filter(Boolean)
         .sort((a, b) => a._ts - b._ts);
 
-      // 최근 7일분만
+      // 최근 30일분
       const uniqueDates = [...new Set(points.map((p) => p.dateKey))];
-      const recent7 = new Set(uniqueDates.slice(-7));
-      const filtered = points.filter((p) => recent7.has(p.dateKey));
+      const recent30 = new Set(uniqueDates.slice(-30));
+      const filtered = points.filter((p) => recent30.has(p.dateKey));
 
-      return filtered.map((p, idx) => ({
+      // 같은 크롤링 시각(날짜+시:분) 중 최저가만 남기기
+      const slotBest = {};
+      for (const p of filtered) {
+        if (!slotBest[p.slotKey] || p.price < slotBest[p.slotKey].price) {
+          slotBest[p.slotKey] = p;
+        }
+      }
+      const bestPoints = Object.values(slotBest).sort((a, b) => a._ts - b._ts);
+
+      return bestPoints.map((p, idx) => ({
         _index: idx,
         x: p.dateKey,
         time: p.timeKey,
