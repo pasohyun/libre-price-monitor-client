@@ -1739,29 +1739,30 @@ function SingleSellerPriceTrend({ mode, timeline, sellerName, height = 240 }) {
     if (!timeline || timeline.length === 0) return [];
 
     if (mode === "daily") {
-      // 크롤링 시점별 포인트 생성
+      // API 응답의 KST 기준 date/time 필드를 직접 사용
       const points = timeline
         .map((item) => {
-          const date = parseDateLike(item.capturedAt);
-          if (!date) return null;
-          const dateKey = `${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}`;
-          const timeKey = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-          const slotKey = `${dateKey}_${timeKey}`;
+          const dateStr = item.date || (item.capturedAt ? item.capturedAt.slice(0, 10) : null);
+          const timeStr = item.time || (item.capturedAt ? item.capturedAt.slice(11, 16) : "00:00");
+          if (!dateStr) return null;
+          const dateKey = `${dateStr.slice(5, 7)}/${dateStr.slice(8, 10)}`;
+          const slotKey = `${dateStr}_${timeStr}`;
           return {
-            _ts: date.getTime(),
+            _sortKey: slotKey,
+            dateStr,
             dateKey,
-            timeKey,
+            timeKey: timeStr,
             slotKey,
             price: item.unitPrice,
           };
         })
         .filter(Boolean)
-        .sort((a, b) => a._ts - b._ts);
+        .sort((a, b) => a._sortKey.localeCompare(b._sortKey));
 
       // 최근 30일분
-      const uniqueDates = [...new Set(points.map((p) => p.dateKey))];
+      const uniqueDates = [...new Set(points.map((p) => p.dateStr))].sort();
       const recent30 = new Set(uniqueDates.slice(-30));
-      const filtered = points.filter((p) => recent30.has(p.dateKey));
+      const filtered = points.filter((p) => recent30.has(p.dateStr));
 
       // 같은 크롤링 시각(날짜+시:분) 중 최저가만 남기기
       const slotBest = {};
@@ -1770,7 +1771,7 @@ function SingleSellerPriceTrend({ mode, timeline, sellerName, height = 240 }) {
           slotBest[p.slotKey] = p;
         }
       }
-      const bestPoints = Object.values(slotBest).sort((a, b) => a._ts - b._ts);
+      const bestPoints = Object.values(slotBest).sort((a, b) => a._sortKey.localeCompare(b._sortKey));
 
       return bestPoints.map((p, idx) => ({
         _index: idx,
@@ -3260,21 +3261,12 @@ function SellerDetail({
     });
   }, [timeline, settings.threshold, filterTime, filterPack]);
 
-  // 그래프용 데이터: 필터 미적용 시 일별 최저가, 필터 적용 시 필터된 전체
+  // 그래프용 데이터: 필터 적용 시 필터된 데이터, 미적용 시 전체 데이터
+  // (SingleSellerPriceTrend 내부에서 시각별 최저가 처리)
   const chartTimeline = useMemo(() => {
     const isFiltered = filterTime !== "all" || filterPack !== "all";
     if (isFiltered) return filteredTimeline;
-    // 필터 없을 때: 일별 최저가만
-    const dailyBest = {};
-    for (const t of timeline) {
-      const dateKey = t.date || (t.capturedAt ? t.capturedAt.slice(0, 10) : "");
-      if (!dailyBest[dateKey] || t.unitPrice < dailyBest[dateKey].unitPrice) {
-        dailyBest[dateKey] = t;
-      }
-    }
-    return Object.values(dailyBest).sort((a, b) =>
-      (a.capturedAt || "").localeCompare(b.capturedAt || "")
-    );
+    return timeline;
   }, [timeline, filteredTimeline, filterTime, filterPack]);
 
   const rows = filteredTimeline
