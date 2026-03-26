@@ -1952,9 +1952,9 @@ function SingleSellerPriceTrend({ mode, timeline, sellerName, height = 240 }) {
   }, [chartData]);
 
   const dailyLabelStep = useMemo(() => {
-    // 일별 라벨은 최대 10개 정도만 보이도록 간격을 자동 계산한다.
+    // 일별 라벨은 기울임 표시를 전제로 최대 18개 정도까지 보여준다.
     if (mode !== "daily") return 1;
-    return Math.max(1, Math.ceil(chartData.length / 10));
+    return Math.max(1, Math.ceil(chartData.length / 18));
   }, [mode, chartData.length]);
 
   if (chartData.length === 0) {
@@ -1980,8 +1980,11 @@ function SingleSellerPriceTrend({ mode, timeline, sellerName, height = 240 }) {
             dataKey={mode === "daily" ? "_index" : "x"}
             tick={{ fontSize: 12 }}
             tickMargin={8}
+            height={mode === "daily" ? 52 : undefined}
             {...(mode === "daily" ? {
               interval: 0,
+              angle: -50,
+              textAnchor: "end",
               tickFormatter: (idx) => {
                 const point = chartData[idx];
                 if (!point) return "";
