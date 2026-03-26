@@ -1224,6 +1224,58 @@ const getNaverTrendValueKeys = (displayName) => {
   }
   return getSellerDataKeys(displayName);
 };
+const buildSellerMetricsFromTimeline = (timeline, threshold, parseDateFn) => {
+  const list = Array.isArray(timeline) ? timeline : [];
+  if (list.length === 0) return null;
+  const sorted = list
+    .slice()
+    .sort((a, b) => {
+      const aMs = parseDateFn(a?.capturedAt)?.getTime() ?? 0;
+      const bMs = parseDateFn(b?.capturedAt)?.getTime() ?? 0;
+      return bMs - aMs;
+    });
+  const prices = sorted
+    .map((t) => Number(t?.unitPrice))
+    .filter((v) => !Number.isNaN(v) && v > 0);
+  const currentPrice = prices[0] ?? null;
+  const sevenDaysAgoMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const recent7d = sorted.filter((t) => {
+    const ts = parseDateFn(t?.capturedAt)?.getTime() ?? 0;
+    return ts >= sevenDaysAgoMs;
+  });
+  const recent7dPrices = recent7d
+    .map((t) => Number(t?.unitPrice))
+    .filter((v) => !Number.isNaN(v) && v > 0);
+  const min7d =
+    recent7dPrices.length > 0
+      ? Math.min(...recent7dPrices)
+      : prices.length > 0
+        ? Math.min(...prices)
+        : null;
+  const max7d =
+    recent7dPrices.length > 0
+      ? Math.max(...recent7dPrices)
+      : prices.length > 0
+        ? Math.max(...prices)
+        : null;
+  const belowDaySet = new Set(
+    recent7d
+      .filter((t) => Number(t?.unitPrice) <= threshold)
+      .map((t) => String(t?.date || t?.capturedAt || "").slice(0, 10))
+      .filter(Boolean),
+  );
+  return {
+    currentConsideredUnitPrice: currentPrice,
+    last7dRange: typeof min7d === "number" && typeof max7d === "number" ? max7d - min7d : 0,
+    belowCount: belowDaySet.size,
+    min_price_7d: min7d,
+    max_price_7d: max7d,
+    priceDrop:
+      typeof currentPrice === "number" && typeof max7d === "number"
+        ? Math.max(0, max7d - currentPrice)
+        : 0,
+  };
+};
 const displaySellerName = (channel, sellerName) => {
   const name = String(sellerName || "").trim();
   if (channel === "naver" && name === "네이버") return "최저가비교";
@@ -2770,6 +2822,7 @@ function ChannelSellers({
   const [channelSummary, setChannelSummary] = useState(null);
   const [channelTrends, setChannelTrends] = useState(null);
   const [majorSellerTimelineMap, setMajorSellerTimelineMap] = useState({});
+  const [otherSellerTimelineMap, setOtherSellerTimelineMap] = useState({});
 
   // 채널별 데이터 로드 (naver는 부모에서 받은 데이터 사용, coupang은 별도 fetch)
   useEffect(() => {
@@ -2948,6 +3001,17 @@ function ChannelSellers({
     return Array.from(map.values());
   }, [filteredSellers, channelKey]);
 
+  const fixedSellerKeySet = useMemo(
+    () =>
+      new Set(
+        NAVER_FIXED_SELLER_DEFS.flatMap((def) => [
+          String(def.label).trim(),
+          ...def.keys.map((k) => String(k).trim()),
+        ]),
+      ),
+    [],
+  );
+
   const fixedMajorSellers = useMemo(() => {
     if (!FIXED_MAJOR_CHANNELS.has(channelKey)) return [];
     const threshold =
@@ -2960,56 +3024,11 @@ function ChannelSellers({
           ? majorSellerTimelineMap[def.label]
           : [];
         if (timeline.length > 0) {
-          const sorted = timeline
-            .slice()
-            .sort((a, b) => {
-              const aMs = parseDateLike(a?.capturedAt)?.getTime() ?? 0;
-              const bMs = parseDateLike(b?.capturedAt)?.getTime() ?? 0;
-              return bMs - aMs;
-            });
-          const prices = sorted
-            .map((t) => Number(t?.unitPrice))
-            .filter((v) => !Number.isNaN(v) && v > 0);
-          const currentPrice = prices[0] ?? null;
-          const sevenDaysAgoMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
-          const recent7d = sorted.filter((t) => {
-            const ts = parseDateLike(t?.capturedAt)?.getTime() ?? 0;
-            return ts >= sevenDaysAgoMs;
-          });
-          const recent7dPrices = recent7d
-            .map((t) => Number(t?.unitPrice))
-            .filter((v) => !Number.isNaN(v) && v > 0);
-          const min7d =
-            recent7dPrices.length > 0
-              ? Math.min(...recent7dPrices)
-              : prices.length > 0
-                ? Math.min(...prices)
-                : null;
-          const max7d =
-            recent7dPrices.length > 0
-              ? Math.max(...recent7dPrices)
-              : prices.length > 0
-                ? Math.max(...prices)
-                : null;
-          const belowDaySet = new Set(
-            recent7d
-              .filter((t) => Number(t?.unitPrice) <= threshold)
-              .map((t) => String(t?.date || t?.capturedAt || "").slice(0, 10))
-              .filter(Boolean),
-          );
+          const metric = buildSellerMetricsFromTimeline(timeline, threshold, parseDateLike);
           return {
             seller: def.label,
             __fixedLabel: def.label,
-            currentConsideredUnitPrice: currentPrice,
-            last7dRange:
-              typeof min7d === "number" && typeof max7d === "number" ? max7d - min7d : 0,
-            belowCount: belowDaySet.size,
-            min_price_7d: min7d,
-            max_price_7d: max7d,
-            priceDrop:
-              typeof currentPrice === "number" && typeof max7d === "number"
-                ? Math.max(0, max7d - currentPrice)
-                : 0,
+            ...metric,
           };
         }
 
@@ -3033,19 +3052,54 @@ function ChannelSellers({
       .filter(Boolean);
   }, [channelKey, dedupedDisplaySellers, majorSellerTimelineMap, settings.threshold]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (channelKey !== "naver") {
+      setOtherSellerTimelineMap({});
+      return () => {
+        cancelled = true;
+      };
+    }
+    const others = dedupedDisplaySellers.filter((seller) => {
+      const raw = String(seller.seller || "").trim();
+      const display = displaySellerName(channelKey, seller.seller);
+      return !fixedSellerKeySet.has(raw) && !fixedSellerKeySet.has(display);
+    });
+    async function loadOtherTimelines() {
+      const entries = await Promise.all(
+        others.map(async (seller) => {
+          const result = await fetchMallTimeline(seller.seller, 90, channelKey);
+          return [seller.seller, Array.isArray(result?.data) ? result.data : []];
+        }),
+      );
+      if (cancelled) return;
+      setOtherSellerTimelineMap(Object.fromEntries(entries));
+    }
+    loadOtherTimelines();
+    return () => {
+      cancelled = true;
+    };
+  }, [channelKey, dedupedDisplaySellers, fixedSellerKeySet]);
+
   const otherNaverSellers = useMemo(() => {
     if (channelKey !== "naver") return [];
-    const fixedKeySet = new Set(
-      NAVER_FIXED_SELLER_DEFS.flatMap((def) => [
-        String(def.label).trim(),
-        ...def.keys.map((k) => String(k).trim()),
-      ]),
-    );
+    const threshold =
+      typeof settings.threshold === "string" && settings.threshold === ""
+        ? Infinity
+        : Number(settings.threshold) || Infinity;
     return dedupedDisplaySellers
       .filter((seller) => {
         const raw = String(seller.seller || "").trim();
         const display = displaySellerName(channelKey, seller.seller);
-        return !fixedKeySet.has(raw) && !fixedKeySet.has(display);
+        return !fixedSellerKeySet.has(raw) && !fixedSellerKeySet.has(display);
+      })
+      .map((seller) => {
+        const timeline = Array.isArray(otherSellerTimelineMap[seller.seller])
+          ? otherSellerTimelineMap[seller.seller]
+          : [];
+        if (!timeline.length) return seller;
+        const metric = buildSellerMetricsFromTimeline(timeline, threshold, parseDateLike);
+        return metric ? { ...seller, ...metric } : seller;
       })
       .sort((a, b) => {
         // 말썽 판매처(기준가 이하 발생 횟수 많은 곳)를 우선 노출한다.
@@ -3055,7 +3109,7 @@ function ChannelSellers({
         if (dropDiff !== 0) return dropDiff;
         return (a.currentConsideredUnitPrice || 0) - (b.currentConsideredUnitPrice || 0);
       });
-  }, [channelKey, dedupedDisplaySellers]);
+  }, [channelKey, dedupedDisplaySellers, fixedSellerKeySet, otherSellerTimelineMap, settings.threshold]);
 
   const majorSellerTrend = useMemo(() => {
     if (!FIXED_MAJOR_CHANNELS.has(channelKey)) {
