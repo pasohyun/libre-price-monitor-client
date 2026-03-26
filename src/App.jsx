@@ -3743,6 +3743,8 @@ function SellerDetail({
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterTime, setFilterTime] = useState("all");
   const [filterPack, setFilterPack] = useState("all");
+  const [selectedProductIds, setSelectedProductIds] = useState(() => new Set());
+  const [deletingRows, setDeletingRows] = useState(false);
 
   // API에서 셀러 타임라인 데이터 로드
   useEffect(() => {
@@ -3810,7 +3812,68 @@ function SellerDetail({
       __rowKey: `${channelKey}-${sellerName}-${idx}`,
     }));
 
+  useEffect(() => {
+    const validIdSet = new Set(
+      rows.map((r) => Number(r.productId)).filter((id) => Number.isFinite(id) && id > 0),
+    );
+    setSelectedProductIds((prev) => {
+      const next = new Set();
+      prev.forEach((id) => {
+        if (validIdSet.has(id)) next.add(id);
+      });
+      return next;
+    });
+  }, [rows]);
+
   const columns = [
+    {
+      key: "selected",
+      header: (
+        <input
+          type="checkbox"
+          checked={
+            rows.length > 0 &&
+            rows
+              .map((r) => Number(r.productId))
+              .filter((id) => Number.isFinite(id) && id > 0)
+              .every((id) => selectedProductIds.has(id))
+          }
+          onChange={(e) => {
+            const checked = e.target.checked;
+            const rowIds = rows
+              .map((r) => Number(r.productId))
+              .filter((id) => Number.isFinite(id) && id > 0);
+            setSelectedProductIds((prev) => {
+              const next = new Set(prev);
+              if (checked) rowIds.forEach((id) => next.add(id));
+              else rowIds.forEach((id) => next.delete(id));
+              return next;
+            });
+          }}
+        />
+      ),
+      render: (r) => {
+        const pid = Number(r.productId);
+        const valid = Number.isFinite(pid) && pid > 0;
+        return (
+          <input
+            type="checkbox"
+            disabled={!valid}
+            checked={valid ? selectedProductIds.has(pid) : false}
+            onChange={(e) => {
+              const checked = e.target.checked;
+              if (!valid) return;
+              setSelectedProductIds((prev) => {
+                const next = new Set(prev);
+                if (checked) next.add(pid);
+                else next.delete(pid);
+                return next;
+              });
+            }}
+          />
+        );
+      },
+    },
     { key: "capturedAt", header: "확인 시간" },
     {
       key: "price",
@@ -4059,23 +4122,50 @@ function SellerDetail({
       <Card
         title="판매정보 + 캡처본(타임라인)"
         right={
-          <button
-            type="button"
-            onClick={() => setFilterOpen((v) => !v)}
-            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
-              filterTime !== "all" || filterPack !== "all"
-                ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            <span>필터</span>
-            {(filterTime !== "all" || filterPack !== "all") && (
-              <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] text-white">
-                {(filterTime !== "all" ? 1 : 0) + (filterPack !== "all" ? 1 : 0)}
-              </span>
-            )}
-            <span className="text-xs">{filterOpen ? "▲" : "▼"}</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 disabled:opacity-50"
+              disabled={selectedProductIds.size === 0 || deletingRows}
+              onClick={async () => {
+                if (selectedProductIds.size === 0 || deletingRows) return;
+                const ok = window.confirm(
+                  `선택한 ${selectedProductIds.size}건을 삭제할까요? 삭제된 데이터는 DB에서도 제거됩니다.`,
+                );
+                if (!ok) return;
+                setDeletingRows(true);
+                const res = await deleteProductsByIds(Array.from(selectedProductIds));
+                if (!res?.deleted) {
+                  window.alert(`삭제 실패: ${res?.message || "알 수 없는 오류"}`);
+                  setDeletingRows(false);
+                  return;
+                }
+                setSelectedProductIds(new Set());
+                const refreshed = await fetchMallTimeline(sellerName, 30, channelKey);
+                if (refreshed?.data) setTimelineData(refreshed.data);
+                setDeletingRows(false);
+              }}
+            >
+              {deletingRows ? "삭제 중..." : `선택 삭제 (${selectedProductIds.size})`}
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterOpen((v) => !v)}
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
+                filterTime !== "all" || filterPack !== "all"
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              <span>필터</span>
+              {(filterTime !== "all" || filterPack !== "all") && (
+                <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] text-white">
+                  {(filterTime !== "all" ? 1 : 0) + (filterPack !== "all" ? 1 : 0)}
+                </span>
+              )}
+              <span className="text-xs">{filterOpen ? "▲" : "▼"}</span>
+            </button>
+          </div>
         }
       >
         {filterOpen && (
