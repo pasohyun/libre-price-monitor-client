@@ -3960,7 +3960,7 @@ export default function App() {
 
   const footer = (
     <div className="border-t border-slate-200 bg-white">
-      <div className="mx-auto max-w-6xl px-4 py-6 text-xs text-slate-500">
+      <div className="mx-auto max-w-[1600px] px-4 py-6 text-xs text-slate-500">
         * 본 화면은 MVP 데모용이며, 실제 크롤링/DB 연동 시 데이터가 실시간
         반영됩니다.
       </div>
@@ -3981,7 +3981,7 @@ export default function App() {
         onSubmit={handleSubmitMedicalModal}
       />
       {header}
-      <main className="mx-auto max-w-6xl px-4 py-6">
+      <main className="mx-auto max-w-[1600px] px-4 py-6">
         <Routes>
           <Route
             path="/"
