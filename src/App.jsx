@@ -2769,6 +2769,7 @@ function ChannelSellers({
   const [marketFilter, setMarketFilter] = useState("all");
   const [channelSummary, setChannelSummary] = useState(null);
   const [channelTrends, setChannelTrends] = useState(null);
+  const [majorSellerTimelineMap, setMajorSellerTimelineMap] = useState({});
 
   // 채널별 데이터 로드 (naver는 부모에서 받은 데이터 사용, coupang은 별도 fetch)
   useEffect(() => {
@@ -2784,6 +2785,32 @@ function ChannelSellers({
     }
     loadChannelData();
   }, [channelKey, parentMallsSummary, parentMallsTrends]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!FIXED_MAJOR_CHANNELS.has(channelKey)) {
+      setMajorSellerTimelineMap({});
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    async function loadMajorSellerTimelines() {
+      const entries = await Promise.all(
+        NAVER_FIXED_SELLER_DEFS.map(async (def) => {
+          const result = await fetchMallTimeline(def.label, 90, channelKey);
+          return [def.label, Array.isArray(result?.data) ? result.data : []];
+        }),
+      );
+      if (cancelled) return;
+      setMajorSellerTimelineMap(Object.fromEntries(entries));
+    }
+
+    loadMajorSellerTimelines();
+    return () => {
+      cancelled = true;
+    };
+  }, [channelKey]);
 
   const mallsSummary = channelSummary;
   const mallsTrends = channelTrends;
@@ -2970,9 +2997,58 @@ function ChannelSellers({
   }, [channelKey, dedupedDisplaySellers]);
 
   const majorSellerTrend = useMemo(() => {
-    if (!FIXED_MAJOR_CHANNELS.has(channelKey) || !mallsTrends?.data?.length) {
+    if (!FIXED_MAJOR_CHANNELS.has(channelKey)) {
       return { data: [], malls: [] };
     }
+
+    const dailyBySeller = {};
+    const allDates = new Set();
+    NAVER_FIXED_SELLER_LABELS.forEach((label) => {
+      const timeline = majorSellerTimelineMap[label] || [];
+      const byDate = {};
+      timeline.forEach((item) => {
+        const dateRaw = String(item?.date || item?.capturedAt || "").slice(0, 10);
+        const unit = Number(item?.unitPrice);
+        if (!dateRaw || Number.isNaN(unit)) return;
+        allDates.add(dateRaw);
+        if (!(dateRaw in byDate) || unit < byDate[dateRaw]) {
+          byDate[dateRaw] = unit;
+        }
+      });
+      dailyBySeller[label] = byDate;
+    });
+
+    const sortedDates = Array.from(allDates).sort((a, b) => {
+      const da = parseDateLike(a);
+      const db = parseDateLike(b);
+      if (da && db) return da - db;
+      return String(a).localeCompare(String(b));
+    });
+
+    const timelineRows = sortedDates.map((dateKey) => {
+      const d = parseDateLike(dateKey);
+      const x = d
+        ? `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`
+        : dateKey;
+      const row = { x };
+      NAVER_FIXED_SELLER_LABELS.forEach((label) => {
+        const v = dailyBySeller[label]?.[dateKey];
+        row[label] = typeof v === "number" && !Number.isNaN(v) ? v : null;
+      });
+      return row;
+    });
+
+    if (timelineRows.length > 0) {
+      return {
+        data: buildContinuousMallTrendData(timelineRows, NAVER_FIXED_SELLER_LABELS),
+        malls: NAVER_FIXED_SELLER_LABELS,
+      };
+    }
+
+    if (!mallsTrends?.data?.length) {
+      return { data: [], malls: NAVER_FIXED_SELLER_LABELS };
+    }
+
     const mappedRows = (mallsTrends.data || []).map((row) => {
       const x = row?.x || row?.date;
       const mapped = { x };
@@ -2986,13 +3062,10 @@ function ChannelSellers({
       return mapped;
     });
     return {
-      data: buildContinuousMallTrendData(
-        mappedRows,
-        NAVER_FIXED_SELLER_LABELS,
-      ),
+      data: buildContinuousMallTrendData(mappedRows, NAVER_FIXED_SELLER_LABELS),
       malls: NAVER_FIXED_SELLER_LABELS,
     };
-  }, [channelKey, mallsTrends]);
+  }, [channelKey, mallsTrends, majorSellerTimelineMap]);
 
   return (
     <div className="space-y-6">
