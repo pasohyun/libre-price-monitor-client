@@ -2950,8 +2950,69 @@ function ChannelSellers({
 
   const fixedMajorSellers = useMemo(() => {
     if (!FIXED_MAJOR_CHANNELS.has(channelKey)) return [];
+    const threshold =
+      typeof settings.threshold === "string" && settings.threshold === ""
+        ? Infinity
+        : Number(settings.threshold) || Infinity;
     return NAVER_FIXED_SELLER_DEFS
       .map((def) => {
+        const timeline = Array.isArray(majorSellerTimelineMap[def.label])
+          ? majorSellerTimelineMap[def.label]
+          : [];
+        if (timeline.length > 0) {
+          const sorted = timeline
+            .slice()
+            .sort((a, b) => {
+              const aMs = parseDateLike(a?.capturedAt)?.getTime() ?? 0;
+              const bMs = parseDateLike(b?.capturedAt)?.getTime() ?? 0;
+              return bMs - aMs;
+            });
+          const prices = sorted
+            .map((t) => Number(t?.unitPrice))
+            .filter((v) => !Number.isNaN(v) && v > 0);
+          const currentPrice = prices[0] ?? null;
+          const sevenDaysAgoMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
+          const recent7d = sorted.filter((t) => {
+            const ts = parseDateLike(t?.capturedAt)?.getTime() ?? 0;
+            return ts >= sevenDaysAgoMs;
+          });
+          const recent7dPrices = recent7d
+            .map((t) => Number(t?.unitPrice))
+            .filter((v) => !Number.isNaN(v) && v > 0);
+          const min7d =
+            recent7dPrices.length > 0
+              ? Math.min(...recent7dPrices)
+              : prices.length > 0
+                ? Math.min(...prices)
+                : null;
+          const max7d =
+            recent7dPrices.length > 0
+              ? Math.max(...recent7dPrices)
+              : prices.length > 0
+                ? Math.max(...prices)
+                : null;
+          const belowDaySet = new Set(
+            recent7d
+              .filter((t) => Number(t?.unitPrice) <= threshold)
+              .map((t) => String(t?.date || t?.capturedAt || "").slice(0, 10))
+              .filter(Boolean),
+          );
+          return {
+            seller: def.label,
+            __fixedLabel: def.label,
+            currentConsideredUnitPrice: currentPrice,
+            last7dRange:
+              typeof min7d === "number" && typeof max7d === "number" ? max7d - min7d : 0,
+            belowCount: belowDaySet.size,
+            min_price_7d: min7d,
+            max_price_7d: max7d,
+            priceDrop:
+              typeof currentPrice === "number" && typeof max7d === "number"
+                ? Math.max(0, max7d - currentPrice)
+                : 0,
+          };
+        }
+
         const matched = dedupedDisplaySellers.find((seller) => {
           const raw = String(seller.seller || "").trim();
           const display = displaySellerName(channelKey, seller.seller);
@@ -2970,7 +3031,7 @@ function ChannelSellers({
         };
       })
       .filter(Boolean);
-  }, [channelKey, dedupedDisplaySellers]);
+  }, [channelKey, dedupedDisplaySellers, majorSellerTimelineMap, settings.threshold]);
 
   const otherNaverSellers = useMemo(() => {
     if (channelKey !== "naver") return [];
