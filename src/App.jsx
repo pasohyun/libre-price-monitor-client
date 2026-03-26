@@ -1198,6 +1198,7 @@ const NAVER_FIXED_SELLER_DEFS = [
   { label: "필라이즈", keys: ["필라이즈"] },
 ];
 const NAVER_FIXED_SELLER_LABELS = NAVER_FIXED_SELLER_DEFS.map((def) => def.label);
+const FIXED_MAJOR_CHANNELS = new Set(["naver", "coupang"]);
 const NAVER_FIXED_SELLER_DEFAULT = {
   currentConsideredUnitPrice: null,
   last7dRange: 0,
@@ -2919,8 +2920,8 @@ function ChannelSellers({
     return Array.from(map.values());
   }, [filteredSellers, channelKey]);
 
-  const fixedNaverSellers = useMemo(() => {
-    if (channelKey !== "naver") return [];
+  const fixedMajorSellers = useMemo(() => {
+    if (!FIXED_MAJOR_CHANNELS.has(channelKey)) return [];
     return NAVER_FIXED_SELLER_DEFS
       .map((def) => {
         const matched = dedupedDisplaySellers.find((seller) => {
@@ -2967,8 +2968,8 @@ function ChannelSellers({
       });
   }, [channelKey, dedupedDisplaySellers]);
 
-  const naverMajorTrend = useMemo(() => {
-    if (channelKey !== "naver" || !mallsTrends?.data?.length) {
+  const majorSellerTrend = useMemo(() => {
+    if (!FIXED_MAJOR_CHANNELS.has(channelKey) || !mallsTrends?.data?.length) {
       return { data: [], malls: [] };
     }
     const mappedRows = (mallsTrends.data || []).map((row) => {
@@ -3065,11 +3066,11 @@ function ChannelSellers({
 
         <div className="col-span-12 lg:col-span-8">
           <Card title="채널 판매가 추이">
-            {channelKey === "naver" && naverMajorTrend.data.length > 0 ? (
+            {FIXED_MAJOR_CHANNELS.has(channelKey) ? (
               <PriceTrend
                 mode={mode}
-                data={naverMajorTrend.data}
-                malls={naverMajorTrend.malls}
+                data={majorSellerTrend.data}
+                malls={NAVER_FIXED_SELLER_LABELS}
               />
             ) : mallsTrends?.data?.length > 0 ? (
               <PriceTrend
@@ -3092,7 +3093,9 @@ function ChannelSellers({
       </div>
 
       <div className="grid grid-cols-12 gap-4">
-        {(channelKey === "naver" ? fixedNaverSellers : dedupedDisplaySellers).map((s) => (
+        {(FIXED_MAJOR_CHANNELS.has(channelKey)
+          ? fixedMajorSellers
+          : dedupedDisplaySellers).map((s) => (
           <button
             key={s.seller}
             type="button"
