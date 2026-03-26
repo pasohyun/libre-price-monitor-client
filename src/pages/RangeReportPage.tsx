@@ -79,6 +79,8 @@ export default function RangeReportPage() {
 
   // 기준가 이하 리스트 필터
   const [filterQuantity, setFilterQuantity] = useState<number | "">("");
+  const [filterDate, setFilterDate] = useState("");
+  const [filterHour, setFilterHour] = useState("");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [expandedSellers, setExpandedSellers] = useState<Set<number>>(new Set());
 
@@ -107,9 +109,37 @@ export default function RangeReportPage() {
     ? data.below_threshold_list
     : [];
 
+  // 날짜/시간으로 스냅샷 필터링 헬퍼
+  const matchesDateTime = (timeVal: any) => {
+    if (!filterDate && !filterHour) return true;
+    if (!timeVal) return false;
+    const d = new Date(timeVal);
+    if (Number.isNaN(d.getTime())) return false;
+    const kst = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+    if (filterDate) {
+      const dateStr = `${kst.getFullYear()}-${String(kst.getMonth() + 1).padStart(2, "0")}-${String(kst.getDate()).padStart(2, "0")}`;
+      if (dateStr !== filterDate) return false;
+    }
+    if (filterHour) {
+      if (String(kst.getHours()).padStart(2, "0") !== filterHour) return false;
+    }
+    return true;
+  };
+
   // 필터 + 정렬 적용
+  const hasDateTimeFilter = filterDate !== "" || filterHour !== "";
   const belowList = belowListRaw
+    .map((r: any) => {
+      if (!hasDateTimeFilter) return r;
+      // 날짜/시간 필터 시: 스냅샷 중 매칭되는 것만 남기고 셀러 최저가 재계산
+      const snaps: any[] = Array.isArray(r?.snapshots) ? r.snapshots : [];
+      const filtered = snaps.filter((s: any) => matchesDateTime(s?.time));
+      if (filtered.length === 0) return null;
+      const minSnap = filtered.reduce((a: any, b: any) => (a.unit_price <= b.unit_price ? a : b));
+      return { ...r, ...minSnap, snapshots: filtered };
+    })
     .filter((r: any) => {
+      if (!r) return false;
       if (priceMin !== "" && (r?.unit_price ?? 0) < priceMin) return false;
       if (priceMax !== "" && (r?.unit_price ?? 0) > priceMax) return false;
       if (filterQuantity !== "" && (r?.quantity ?? 0) !== filterQuantity) return false;
@@ -120,6 +150,35 @@ export default function RangeReportPage() {
         ? (a?.unit_price ?? 0) - (b?.unit_price ?? 0)
         : (b?.unit_price ?? 0) - (a?.unit_price ?? 0),
     );
+
+  // 날짜 목록 (필터 드롭다운용)
+  const availableDates = React.useMemo(() => {
+    const dates = new Set<string>();
+    for (const r of belowListRaw) {
+      for (const s of (r?.snapshots || [])) {
+        if (!s?.time) continue;
+        const d = new Date(s.time);
+        if (Number.isNaN(d.getTime())) continue;
+        const kst = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+        dates.add(`${kst.getFullYear()}-${String(kst.getMonth() + 1).padStart(2, "0")}-${String(kst.getDate()).padStart(2, "0")}`);
+      }
+    }
+    return [...dates].sort();
+  }, [belowListRaw]);
+
+  const availableHours = React.useMemo(() => {
+    const hours = new Set<string>();
+    for (const r of belowListRaw) {
+      for (const s of (r?.snapshots || [])) {
+        if (!s?.time) continue;
+        const d = new Date(s.time);
+        if (Number.isNaN(d.getTime())) continue;
+        const kst = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+        hours.add(String(kst.getHours()).padStart(2, "0"));
+      }
+    }
+    return [...hours].sort();
+  }, [belowListRaw]);
 
   const sellerCards: any[] = Array.isArray(data?.seller_cards)
     ? data.seller_cards
@@ -366,6 +425,32 @@ export default function RangeReportPage() {
                     <option value="">전체</option>
                     {[1, 2, 3, 4, 5, 6, 7].map((n) => (
                       <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: "#6b7280" }}>날짜</label>
+                  <select
+                    value={filterDate}
+                    onChange={(e) => setFilterDate(e.target.value)}
+                    style={{ ...inputStyle, width: 140, padding: 6, fontSize: 13 }}
+                  >
+                    <option value="">전체</option>
+                    {availableDates.map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: "#6b7280" }}>시간</label>
+                  <select
+                    value={filterHour}
+                    onChange={(e) => setFilterHour(e.target.value)}
+                    style={{ ...inputStyle, width: 80, padding: 6, fontSize: 13 }}
+                  >
+                    <option value="">전체</option>
+                    {availableHours.map((h) => (
+                      <option key={h} value={h}>{h}시</option>
                     ))}
                   </select>
                 </div>
