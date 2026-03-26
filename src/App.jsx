@@ -201,6 +201,38 @@ async function confirmManualQuantity(productId, quantity) {
   }
 }
 
+async function deleteProductsByIds(productIds = []) {
+  try {
+    const safeIds = Array.from(
+      new Set(
+        (Array.isArray(productIds) ? productIds : [])
+          .map((id) => Number(id))
+          .filter((id) => Number.isFinite(id) && id > 0),
+      ),
+    );
+    if (safeIds.length === 0) return { deleted: false, deleted_count: 0, message: "No ids" };
+    const response = await fetch(`${API_BASE}/products/delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ product_ids: safeIds }),
+    });
+    if (!response.ok) {
+      let detail = `API error: ${response.status}`;
+      try {
+        const err = await response.json();
+        if (err?.detail) detail = String(err.detail);
+      } catch {
+        // ignore
+      }
+      throw new Error(detail);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error("Failed to delete products:", error);
+    return { deleted: false, deleted_count: 0, message: String(error) };
+  }
+}
+
 // -----------------------------
 // Mock Data (일별/월별 데이터는 백엔드에 없으므로 유지)
 // -----------------------------
@@ -2364,6 +2396,8 @@ function MainDashboard({
   onGoChannel,
   onGenerateImage,
   onManualConfirm,
+  onDeleteProducts,
+  onRefreshData,
   data,
   offers,
   mallsSummary,
@@ -2378,6 +2412,8 @@ function MainDashboard({
   const [manualSubmitting, setManualSubmitting] = useState(false);
   const [channelFilter, setChannelFilter] = useState("all"); // all | naver | coupang | others
   const [offersPage, setOffersPage] = useState(1);
+  const [selectedProductIds, setSelectedProductIds] = useState(() => new Set());
+  const [deletingRows, setDeletingRows] = useState(false);
   const [mainTimelineMap, setMainTimelineMap] = useState({});
   const allSeriesDefs = useMemo(
     () =>
@@ -2466,6 +2502,19 @@ function MainDashboard({
     }
   }, [offersPage, totalOffersPages]);
 
+  useEffect(() => {
+    const validIdSet = new Set(
+      filteredOffers.map((o) => Number(o.productId)).filter((id) => Number.isFinite(id) && id > 0),
+    );
+    setSelectedProductIds((prev) => {
+      const next = new Set();
+      prev.forEach((id) => {
+        if (validIdSet.has(id)) next.add(id);
+      });
+      return next;
+    });
+  }, [filteredOffers]);
+
   const stats = useMemo(() => {
     const thr = Number.isFinite(safeSettings.threshold)
       ? safeSettings.threshold
@@ -2500,6 +2549,57 @@ function MainDashboard({
   }, [offers, safeSettings.threshold]);
 
   const columns = [
+    {
+      key: "selected",
+      header: (
+        <input
+          type="checkbox"
+          checked={
+            pagedOffers.length > 0 &&
+            pagedOffers
+              .map((r) => Number(r.productId))
+              .filter((id) => Number.isFinite(id) && id > 0)
+              .every((id) => selectedProductIds.has(id))
+          }
+          onChange={(e) => {
+            const checked = e.target.checked;
+            const pageIds = pagedOffers
+              .map((r) => Number(r.productId))
+              .filter((id) => Number.isFinite(id) && id > 0);
+            setSelectedProductIds((prev) => {
+              const next = new Set(prev);
+              if (checked) {
+                pageIds.forEach((id) => next.add(id));
+              } else {
+                pageIds.forEach((id) => next.delete(id));
+              }
+              return next;
+            });
+          }}
+        />
+      ),
+      render: (r) => {
+        const pid = Number(r.productId);
+        const valid = Number.isFinite(pid) && pid > 0;
+        return (
+          <input
+            type="checkbox"
+            disabled={!valid}
+            checked={valid ? selectedProductIds.has(pid) : false}
+            onChange={(e) => {
+              const checked = e.target.checked;
+              if (!valid) return;
+              setSelectedProductIds((prev) => {
+                const next = new Set(prev);
+                if (checked) next.add(pid);
+                else next.delete(pid);
+                return next;
+              });
+            }}
+          />
+        );
+      },
+    },
     {
       key: "channel",
       header: "채널",
@@ -2915,6 +3015,30 @@ function MainDashboard({
         title={`기준가 이하 판매처${channelFilter !== "all" ? ` (${channelFilter === "naver" ? "네이버" : channelFilter === "coupang" ? "쿠팡" : "기타"})` : ""}`}
         right={
           <div className="flex items-center gap-3 text-sm text-slate-500">
+            <button
+              type="button"
+              className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 disabled:opacity-50"
+              disabled={selectedProductIds.size === 0 || deletingRows}
+              onClick={async () => {
+                if (selectedProductIds.size === 0 || deletingRows) return;
+                const ok = window.confirm(
+                  `선택한 ${selectedProductIds.size}건을 삭제할까요? 삭제된 데이터는 DB에서도 제거됩니다.`,
+                );
+                if (!ok) return;
+                setDeletingRows(true);
+                const res = await onDeleteProducts(Array.from(selectedProductIds));
+                if (!res?.deleted) {
+                  window.alert(`삭제 실패: ${res?.message || "알 수 없는 오류"}`);
+                  setDeletingRows(false);
+                  return;
+                }
+                setSelectedProductIds(new Set());
+                await onRefreshData?.();
+                setDeletingRows(false);
+              }}
+            >
+              {deletingRows ? "삭제 중..." : `선택 삭제 (${selectedProductIds.size})`}
+            </button>
             <div>
               기준가:{" "}
               <span className="font-semibold text-slate-900">
@@ -4302,6 +4426,10 @@ export default function App() {
     return result;
   };
 
+  const handleDeleteProducts = async (productIds) => {
+    return await deleteProductsByIds(productIds);
+  };
+
   // 범위/기준가 유효성 보정(입력 실수 방지)
   const safeSettings = useMemo(() => {
     const min = clampNumber(settings.minPrice, 0, 999999999);
@@ -4394,6 +4522,8 @@ export default function App() {
                     }
                     onGenerateImage={handleGenerateImageOnDemand}
                     onManualConfirm={handleManualConfirmQuantity}
+                    onDeleteProducts={handleDeleteProducts}
+                    onRefreshData={refreshDashboardData}
                     data={data}
                     offers={offers}
                     mallsSummary={mallsSummary}
