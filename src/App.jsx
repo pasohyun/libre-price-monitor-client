@@ -2378,7 +2378,41 @@ function MainDashboard({
   const [manualSubmitting, setManualSubmitting] = useState(false);
   const [channelFilter, setChannelFilter] = useState("all"); // all | naver | coupang | others
   const [offersPage, setOffersPage] = useState(1);
+  const [mainTimelineMap, setMainTimelineMap] = useState({});
+  const allSeriesDefs = useMemo(
+    () =>
+      ["naver", "coupang"].flatMap((ch) =>
+        NAVER_FIXED_SELLER_LABELS.map((seller) => ({
+          id: `${ch}::${seller}`,
+          channel: ch,
+          seller,
+          label: `${seller}(${channelLabel(ch)})`,
+        })),
+      ),
+    [],
+  );
+  const [activeSeriesIds, setActiveSeriesIds] = useState(() =>
+    new Set(allSeriesDefs.map((s) => s.id)),
+  );
   const OFFERS_PER_PAGE = 20;
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadMainTimelines() {
+      const entries = await Promise.all(
+        allSeriesDefs.map(async (series) => {
+          const result = await fetchMallTimeline(series.seller, 90, series.channel);
+          return [series.id, Array.isArray(result?.data) ? result.data : []];
+        }),
+      );
+      if (cancelled) return;
+      setMainTimelineMap(Object.fromEntries(entries));
+    }
+    loadMainTimelines();
+    return () => {
+      cancelled = true;
+    };
+  }, [allSeriesDefs]);
 
   const filteredOffers = useMemo(() => {
     const thr = Number.isFinite(safeSettings.threshold)
@@ -2568,6 +2602,82 @@ function MainDashboard({
     },
   ];
 
+  const mainTrendData = useMemo(() => {
+    const allDates = new Set();
+    const bySeriesAndDate = {};
+
+    allSeriesDefs.forEach((series) => {
+      const timeline = Array.isArray(mainTimelineMap[series.id]) ? mainTimelineMap[series.id] : [];
+      const byDate = {};
+      timeline.forEach((item) => {
+        const dateRaw = String(item?.date || item?.capturedAt || "").slice(0, 10);
+        const unit = Number(item?.unitPrice);
+        if (!dateRaw || Number.isNaN(unit)) return;
+        allDates.add(dateRaw);
+        if (!(dateRaw in byDate) || unit < byDate[dateRaw]) {
+          byDate[dateRaw] = unit;
+        }
+      });
+      bySeriesAndDate[series.id] = byDate;
+    });
+
+    const sortedDates = Array.from(allDates).sort((a, b) => {
+      const da = parseDateLike(a);
+      const db = parseDateLike(b);
+      if (da && db) return da - db;
+      return String(a).localeCompare(String(b));
+    });
+
+    const dailyRaw = sortedDates.map((dateKey) => {
+      const d = parseDateLike(dateKey);
+      const x = d
+        ? `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`
+        : dateKey;
+      const row = { x };
+      allSeriesDefs.forEach((series) => {
+        const v = bySeriesAndDate[series.id]?.[dateKey];
+        row[series.label] = typeof v === "number" && !Number.isNaN(v) ? v : null;
+      });
+      return row;
+    });
+
+    const daily = dailyRaw.length > 0 ? dailyRaw : trendMode === "daily" ? data.daily : [];
+    const monthlyMap = {};
+    daily.forEach((item) => {
+      let monthKey;
+      if (item.x && item.x.includes("/")) {
+        monthKey = item.x.split("/")[0] + "월";
+      } else if (item.x && item.x.includes("-")) {
+        const parts = item.x.split("-");
+        monthKey = parseInt(parts[1], 10) + "월";
+      } else {
+        return;
+      }
+      if (!monthlyMap[monthKey]) monthlyMap[monthKey] = {};
+      allSeriesDefs.forEach((series) => {
+        const key = series.label;
+        if (item[key] != null) {
+          if (!monthlyMap[monthKey][key] || item[key] < monthlyMap[monthKey][key]) {
+            monthlyMap[monthKey][key] = item[key];
+          }
+        }
+      });
+    });
+    const monthly = Object.keys(monthlyMap)
+      .sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
+      .map((monthKey) => ({ x: monthKey, ...monthlyMap[monthKey] }));
+
+    const activeLabels = allSeriesDefs
+      .filter((series) => activeSeriesIds.has(series.id))
+      .map((series) => series.label);
+
+    return {
+      daily: buildContinuousMallTrendData(daily, activeLabels),
+      monthly: buildContinuousMallTrendData(monthly, activeLabels),
+      malls: activeLabels,
+    };
+  }, [allSeriesDefs, mainTimelineMap, trendMode, data, activeSeriesIds]);
+
   return (
     <div className="space-y-6">
       <ManualQuantityModal
@@ -2660,9 +2770,30 @@ function MainDashboard({
           >
             <PriceTrend
               mode={trendMode}
-              data={trendMode === "daily" ? data.daily : data.monthly}
-              malls={data.malls || []}
+              data={trendMode === "daily" ? mainTrendData.daily : mainTrendData.monthly}
+              malls={mainTrendData.malls || []}
             />
+            <div className="mt-3 flex flex-wrap gap-2">
+              {allSeriesDefs.map((series) => {
+                const active = activeSeriesIds.has(series.id);
+                return (
+                  <Chip
+                    key={series.id}
+                    active={active}
+                    onClick={() =>
+                      setActiveSeriesIds((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(series.id)) next.delete(series.id);
+                        else next.add(series.id);
+                        return next;
+                      })
+                    }
+                  >
+                    {series.label}
+                  </Chip>
+                );
+              })}
+            </div>
             <div className="mt-4 flex flex-wrap gap-2">
               {CHANNELS.map((c) => (
                 <Chip
