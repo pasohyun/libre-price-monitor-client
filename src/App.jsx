@@ -1181,27 +1181,47 @@ const SELLER_DISPLAY_ALIASES = {
   글핏몰: "랜식(글핏몰)",
   글루코핏: "랜식(글핏몰)",
   글루어트: "랜식(글핏몰)",
+  닥터다이어리: "닥터다이어리(닥다몰)",
   닥다몰: "닥터다이어리(닥다몰)",
   무화당: "닥터다이어리(무화당)",
 };
 const SELLER_DB_ALIASES = {
-  "랜식(글핏몰)": "글루코핏",
-  "닥터다이어리(닥다몰)": "닥다몰",
-  "닥터다이어리(무화당)": "무화당",
+  "랜식(글핏몰)": ["글루코핏", "랜식", "글핏몰", "글루어트"],
+  "닥터다이어리(닥다몰)": ["닥다몰", "닥터다이어리"],
+  "닥터다이어리(무화당)": ["무화당"],
 };
 const NAVER_FIXED_SELLER_DEFS = [
   { label: "랜식(글핏몰)", keys: ["랜식", "글핏몰", "글루코핏", "글루어트"] },
   { label: "닥터다이어리(닥다몰)", keys: ["닥다몰"] },
-  { label: "닥터다이어리(무화당)", keys: ["무화당"] },
   { label: "필라이즈", keys: ["필라이즈"] },
   { label: "레디투힐", keys: ["레디투힐"] },
   { label: "메디프라", keys: ["메디프라"] },
 ];
+const NAVER_FIXED_SELLER_LABELS = NAVER_FIXED_SELLER_DEFS.map((def) => def.label);
+const NAVER_FIXED_SELLER_DEFAULT = {
+  currentConsideredUnitPrice: null,
+  last7dRange: 0,
+  belowCount: 0,
+  min_price_7d: null,
+  max_price_7d: null,
+  priceDrop: 0,
+};
 const getSellerDisplayAlias = (name) =>
   SELLER_DISPLAY_ALIASES[String(name || "").trim()] || String(name || "").trim();
 const getSellerDataKeys = (displayName) => {
-  const legacyName = SELLER_DB_ALIASES[displayName];
-  return legacyName ? [displayName, legacyName] : [displayName];
+  const legacy = SELLER_DB_ALIASES[displayName];
+  if (Array.isArray(legacy)) {
+    return Array.from(new Set([displayName, ...legacy]));
+  }
+  if (legacy) return [displayName, legacy];
+  return [displayName];
+};
+const getNaverTrendValueKeys = (displayName) => {
+  const fixedDef = NAVER_FIXED_SELLER_DEFS.find((def) => def.label === displayName);
+  if (fixedDef) {
+    return Array.from(new Set([displayName, ...fixedDef.keys, ...getSellerDataKeys(displayName)]));
+  }
+  return getSellerDataKeys(displayName);
 };
 const displaySellerName = (channel, sellerName) => {
   const name = String(sellerName || "").trim();
@@ -2910,9 +2930,19 @@ function ChannelSellers({
         const matched = dedupedDisplaySellers.find((seller) => {
           const raw = String(seller.seller || "").trim();
           const display = displaySellerName(channelKey, seller.seller);
-          return def.keys.some((key) => key === raw || key === display);
+          return (
+            display === def.label ||
+            raw === def.label ||
+            def.keys.some((key) => key === raw || key === display)
+          );
         });
-        return matched ? { ...matched, __fixedLabel: def.label } : null;
+        if (matched) return { ...matched, __fixedLabel: def.label };
+        // 고정 셀러는 데이터가 없어도 카드 슬롯을 유지해 항상 6개를 보여준다.
+        return {
+          seller: def.label,
+          __fixedLabel: def.label,
+          ...NAVER_FIXED_SELLER_DEFAULT,
+        };
       })
       .filter(Boolean);
   }, [channelKey, dedupedDisplaySellers]);
@@ -2920,7 +2950,10 @@ function ChannelSellers({
   const otherNaverSellers = useMemo(() => {
     if (channelKey !== "naver") return [];
     const fixedKeySet = new Set(
-      NAVER_FIXED_SELLER_DEFS.flatMap((def) => def.keys.map((k) => String(k).trim())),
+      NAVER_FIXED_SELLER_DEFS.flatMap((def) => [
+        String(def.label).trim(),
+        ...def.keys.map((k) => String(k).trim()),
+      ]),
     );
     return dedupedDisplaySellers
       .filter((seller) => {
@@ -2946,7 +2979,8 @@ function ChannelSellers({
       const x = row?.x || row?.date;
       const mapped = { x };
       NAVER_FIXED_SELLER_DEFS.forEach((def) => {
-        const values = def.keys
+        const valueKeys = Array.from(new Set([def.label, ...def.keys]));
+        const values = valueKeys
           .map((key) => row?.[key])
           .filter((v) => typeof v === "number" && !Number.isNaN(v));
         mapped[def.label] = values.length > 0 ? Math.min(...values) : null;
@@ -2956,9 +2990,9 @@ function ChannelSellers({
     return {
       data: buildContinuousMallTrendData(
         mappedRows,
-        NAVER_FIXED_SELLER_DEFS.map((def) => def.label),
+        NAVER_FIXED_SELLER_LABELS,
       ),
-      malls: NAVER_FIXED_SELLER_DEFS.map((def) => def.label),
+      malls: NAVER_FIXED_SELLER_LABELS,
     };
   }, [channelKey, mallsTrends]);
 
@@ -3729,23 +3763,14 @@ export default function App() {
   const data = useMemo(() => {
     // API 데이터가 있으면 사용, 없으면 Mock 데이터
     if (mallsTrends.data && mallsTrends.data.length > 0) {
-      const mallNamesFromApi = mallsTrends.malls || [];
-      const mallNamesResolved =
-        mallNamesFromApi.length > 0
-          ? mallNamesFromApi
-          : Object.keys(mallsTrends.data[0] || {}).filter(
-              (k) => k !== "x" && k !== "date",
-            );
-      const mallNames = Array.from(
-        new Set(mallNamesResolved.map((name) => getSellerDisplayAlias(name))),
-      );
+      const mallNames = NAVER_FIXED_SELLER_LABELS;
 
       // API 데이터를 그래프 형식으로 변환 (구이름/신이름 키 모두 대응)
       const daily = mallsTrends.data.map((item) => {
         const dateKey = item.x || item.date;
         const normalized = { x: dateKey };
         mallNames.forEach((mall) => {
-          const keys = getSellerDataKeys(mall);
+          const keys = getNaverTrendValueKeys(mall);
           const value = keys.map((k) => item[k]).find((v) => v != null);
           if (value != null) normalized[mall] = value;
         });
@@ -3792,25 +3817,31 @@ export default function App() {
       return { daily, monthly, malls: mallNames };
     }
 
-    // tracked-malls API가 비어 있을 때도 기존 네이버 4개 판매처 그래프를 기본 표시한다.
-    const fallbackMalls = ["글루코핏", "레디투힐", "메디프라", "닥다몰"];
+    // tracked-malls API가 비어 있어도 네이버 고정 5개 판매처 그래프를 표시한다.
+    const fallbackMalls = NAVER_FIXED_SELLER_LABELS;
     const toSellerChartData = (sourceByMall) => {
       const xOrder = [];
       const seenX = new Set();
 
       fallbackMalls.forEach((mall) => {
-        (sourceByMall[mall] || []).forEach((point) => {
-          const x = point?.x;
-          if (!x || seenX.has(x)) return;
-          seenX.add(x);
-          xOrder.push(x);
+        const keys = getNaverTrendValueKeys(mall);
+        keys.forEach((key) => {
+          (sourceByMall[key] || []).forEach((point) => {
+            const x = point?.x;
+            if (!x || seenX.has(x)) return;
+            seenX.add(x);
+            xOrder.push(x);
+          });
         });
       });
 
       return xOrder.map((x) => {
         const row = { x };
         fallbackMalls.forEach((mall) => {
-          const point = (sourceByMall[mall] || []).find((p) => p.x === x);
+          const keys = getNaverTrendValueKeys(mall);
+          const point = keys
+            .map((key) => (sourceByMall[key] || []).find((p) => p.x === x))
+            .find(Boolean);
           row[mall] = point ? point.price : null;
         });
         return row;
