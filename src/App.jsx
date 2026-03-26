@@ -1951,6 +1951,12 @@ function SingleSellerPriceTrend({ mode, timeline, sellerName, height = 240 }) {
     };
   }, [chartData]);
 
+  const dailyLabelStep = useMemo(() => {
+    // 일별 라벨은 최대 10개 정도만 보이도록 간격을 자동 계산한다.
+    if (mode !== "daily") return 1;
+    return Math.max(1, Math.ceil(chartData.length / 10));
+  }, [mode, chartData.length]);
+
   if (chartData.length === 0) {
     return (
       <div className="h-[260px] flex items-center justify-center text-slate-500">
@@ -1973,11 +1979,14 @@ function SingleSellerPriceTrend({ mode, timeline, sellerName, height = 240 }) {
           <XAxis
             dataKey={mode === "daily" ? "_index" : "x"}
             tick={{ fontSize: 12 }}
+            tickMargin={8}
             {...(mode === "daily" ? {
               interval: 0,
               tickFormatter: (idx) => {
                 const point = chartData[idx];
                 if (!point) return "";
+                const isLast = idx === chartData.length - 1;
+                if (!isLast && idx % dailyLabelStep !== 0) return "";
                 const prev = idx > 0 ? chartData[idx - 1] : null;
                 if (!prev || prev.x !== point.x) return point.x;
                 return "";
