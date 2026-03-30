@@ -180,9 +180,41 @@ export default function RangeReportPage() {
     return [...hours].sort();
   }, [belowListRaw]);
 
-  const sellerCards: any[] = Array.isArray(data?.seller_cards)
+  const sellerCardsRaw: any[] = Array.isArray(data?.seller_cards)
     ? data.seller_cards
     : [];
+
+  // 필터링된 belowList에 존재하는 셀러만 카드에 표시 + 차트 데이터도 날짜/시간 필터 적용
+  const filteredSellerCards = React.useMemo(() => {
+    const visibleSellers = new Set(
+      belowList.map((r: any) => `${r.seller_name}||${r.platform}`),
+    );
+    return sellerCardsRaw
+      .filter((c: any) => visibleSellers.has(`${c.seller_name}||${c.platform}`))
+      .map((c: any) => {
+        if (!hasDateTimeFilter || !Array.isArray(c.chart_data)) return c;
+        const filteredChart = c.chart_data.filter((p: any) => {
+          if (!p) return false;
+          // chart_data의 date/time 필드로 필터링
+          if (filterDate && p.date !== filterDate) return false;
+          if (filterHour && p.time) {
+            const hour = p.time.split(":")[0];
+            if (hour !== filterHour) return false;
+          }
+          return true;
+        });
+        if (filteredChart.length === 0) return null;
+        const minPrice = Math.min(...filteredChart.map((p: any) => p.min_price));
+        const minPoint = filteredChart.find((p: any) => p.min_price === minPrice);
+        return {
+          ...c,
+          chart_data: filteredChart,
+          min_unit_price: minPrice,
+          min_time: minPoint ? (minPoint.time ? `${minPoint.date} ${minPoint.time}` : minPoint.date) : c.min_time,
+        };
+      })
+      .filter(Boolean);
+  }, [sellerCardsRaw, belowList, hasDateTimeFilter, filterDate, filterHour]);
 
   return (
     <div style={{ padding: 24, maxWidth: 1200, margin: "0 auto" }}>
@@ -621,11 +653,11 @@ export default function RangeReportPage() {
             {/* ③ 셀러별 상세 카드 */}
             <div style={sectionCard}>
               <h3 style={{ marginTop: 0 }}>③ 셀러별 상세 카드</h3>
-              {sellerCards.length === 0 ? (
+              {filteredSellerCards.length === 0 ? (
                 <div>(셀러 카드 없음)</div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                  {sellerCards.map((c: any, i: number) => (
+                  {filteredSellerCards.map((c: any, i: number) => (
                     <div
                       key={i}
                       style={{
