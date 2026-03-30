@@ -131,21 +131,25 @@ export default function RangeReportPage() {
 
   // 필터 + 정렬 적용
   const hasDateTimeFilter = filterDate !== "" || filterHour !== "";
+  const hasSnapshotFilter = hasDateTimeFilter || filterQuantity !== "" || priceMin !== "" || priceMax !== "";
   const belowList = belowListRaw
     .map((r: any) => {
-      if (!hasDateTimeFilter) return r;
-      // 날짜/시간 필터 시: 스냅샷 중 매칭되는 것만 남기고 셀러 최저가 재계산
       const snaps: any[] = Array.isArray(r?.snapshots) ? r.snapshots : [];
-      const filtered = snaps.filter((s: any) => matchesDateTime(s?.time));
+      if (!hasSnapshotFilter) return r;
+      // 스냅샷 레벨에서 날짜/시간/수량/단가 필터 적용
+      const filtered = snaps.filter((s: any) => {
+        if (!matchesDateTime(s?.time)) return false;
+        if (filterQuantity !== "" && (s?.quantity ?? 0) !== filterQuantity) return false;
+        if (priceMin !== "" && (s?.unit_price ?? 0) < priceMin) return false;
+        if (priceMax !== "" && (s?.unit_price ?? 0) > priceMax) return false;
+        return true;
+      });
       if (filtered.length === 0) return null;
       const minSnap = filtered.reduce((a: any, b: any) => (a.unit_price <= b.unit_price ? a : b));
       return { ...r, ...minSnap, snapshots: filtered };
     })
     .filter((r: any) => {
       if (!r) return false;
-      if (priceMin !== "" && (r?.unit_price ?? 0) < priceMin) return false;
-      if (priceMax !== "" && (r?.unit_price ?? 0) > priceMax) return false;
-      if (filterQuantity !== "" && (r?.quantity ?? 0) !== filterQuantity) return false;
       return true;
     })
     .sort((a: any, b: any) =>
@@ -189,19 +193,34 @@ export default function RangeReportPage() {
 
   // 필터링된 belowList에 존재하는 셀러만 카드에 표시 + 차트 데이터도 날짜/시간 필터 적용
   const filteredSellerCards = React.useMemo(() => {
-    const visibleSellers = new Set(
-      belowList.map((r: any) => `${r.seller_name}||${r.platform}`),
-    );
+    // belowList에서 셀러별 필터된 정보를 맵으로 구성
+    const sellerInfoMap = new Map<string, any>();
+    for (const r of belowList) {
+      const key = `${r.seller_name}||${r.platform}`;
+      const existing = sellerInfoMap.get(key);
+      if (!existing || r.unit_price < existing.unit_price) {
+        sellerInfoMap.set(key, r);
+      }
+    }
     return sellerCardsRaw
-      .filter((c: any) => visibleSellers.has(`${c.seller_name}||${c.platform}`))
+      .filter((c: any) => sellerInfoMap.has(`${c.seller_name}||${c.platform}`))
       .filter((c: any) =>
         selectedCardSellers.size === 0 || selectedCardSellers.has(`${c.seller_name}||${c.platform}`),
       )
       .map((c: any) => {
-        if (!hasDateTimeFilter || !Array.isArray(c.chart_data)) return c;
-        const filteredChart = c.chart_data.filter((p: any) => {
+        const key = `${c.seller_name}||${c.platform}`;
+        const info = sellerInfoMap.get(key);
+        // belowList 필터 결과로 카드 대표 정보 업데이트
+        const updated = {
+          ...c,
+          min_unit_price: info?.unit_price ?? c.min_unit_price,
+          quantity: info?.quantity ?? c.quantity,
+          total_price: info?.total_price ?? c.total_price,
+          min_time: info?.time ?? c.min_time,
+        };
+        if (!hasDateTimeFilter || !Array.isArray(updated.chart_data)) return updated;
+        const filteredChart = updated.chart_data.filter((p: any) => {
           if (!p) return false;
-          // chart_data의 date/time 필드로 필터링
           if (filterDate && p.date !== filterDate) return false;
           if (filterHour && p.time) {
             const hour = p.time.split(":")[0];
@@ -209,14 +228,14 @@ export default function RangeReportPage() {
           }
           return true;
         });
-        if (filteredChart.length === 0) return null;
+        if (filteredChart.length === 0) return { ...updated, chart_data: [] };
         const minPrice = Math.min(...filteredChart.map((p: any) => p.min_price));
         const minPoint = filteredChart.find((p: any) => p.min_price === minPrice);
         return {
-          ...c,
+          ...updated,
           chart_data: filteredChart,
-          min_unit_price: minPrice,
-          min_time: minPoint ? (minPoint.time ? `${minPoint.date} ${minPoint.time}` : minPoint.date) : c.min_time,
+          min_unit_price: info?.unit_price ?? minPrice,
+          min_time: info?.time ?? (minPoint ? (minPoint.time ? `${minPoint.date} ${minPoint.time}` : minPoint.date) : c.min_time),
         };
       })
       .filter(Boolean);
