@@ -3741,6 +3741,7 @@ function SellerDetail({
   const [timelineData, setTimelineData] = useState([]);
   const [timelineLoading, setTimelineLoading] = useState(true);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [filterDate, setFilterDate] = useState("all");
   const [filterTime, setFilterTime] = useState("all");
   const [filterPack, setFilterPack] = useState("all");
   const [selectedProductIds, setSelectedProductIds] = useState(() => new Set());
@@ -3771,7 +3772,19 @@ function SellerDetail({
     return Math.round(sum / timeline.length);
   }, [timeline]);
 
-  // 시간/수량 필터 + 기준가 이하 필터링
+  // 날짜 목록 (필터 드롭다운용)
+  const availableDates = useMemo(() => {
+    const dates = new Set();
+    for (const t of timeline) {
+      const d = parseDateLike(t.capturedAt);
+      if (!d) continue;
+      const kst = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+      dates.add(`${kst.getFullYear()}-${String(kst.getMonth() + 1).padStart(2, "0")}-${String(kst.getDate()).padStart(2, "0")}`);
+    }
+    return [...dates].sort();
+  }, [timeline]);
+
+  // 날짜/시간/수량 필터 + 기준가 이하 필터링
   const filteredTimeline = useMemo(() => {
     const thr =
       typeof settings.threshold === "string" && settings.threshold === ""
@@ -3779,6 +3792,13 @@ function SellerDetail({
         : Number(settings.threshold) || Infinity;
     return timeline.filter((t) => {
       if (t.unitPrice > thr) return false;
+      if (filterDate !== "all") {
+        const d = parseDateLike(t.capturedAt);
+        if (!d) return false;
+        const kst = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+        const dateStr = `${kst.getFullYear()}-${String(kst.getMonth() + 1).padStart(2, "0")}-${String(kst.getDate()).padStart(2, "0")}`;
+        if (dateStr !== filterDate) return false;
+      }
       if (filterTime !== "all") {
         const hour = t.time ? t.time.split(":")[0] : null;
         if (hour !== filterTime) return false;
@@ -3788,15 +3808,15 @@ function SellerDetail({
       }
       return true;
     });
-  }, [timeline, settings.threshold, filterTime, filterPack]);
+  }, [timeline, settings.threshold, filterDate, filterTime, filterPack]);
 
   // 그래프용 데이터: 필터 적용 시 필터된 데이터, 미적용 시 전체 데이터
   // (SingleSellerPriceTrend 내부에서 시각별 최저가 처리)
   const chartTimeline = useMemo(() => {
-    const isFiltered = filterTime !== "all" || filterPack !== "all";
+    const isFiltered = filterDate !== "all" || filterTime !== "all" || filterPack !== "all";
     if (isFiltered) return filteredTimeline;
     return timeline;
-  }, [timeline, filteredTimeline, filterTime, filterPack]);
+  }, [timeline, filteredTimeline, filterDate, filterTime, filterPack]);
 
   const rows = useMemo(
     () =>
@@ -4163,15 +4183,15 @@ function SellerDetail({
               type="button"
               onClick={() => setFilterOpen((v) => !v)}
               className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
-                filterTime !== "all" || filterPack !== "all"
+                filterDate !== "all" || filterTime !== "all" || filterPack !== "all"
                   ? "border-emerald-300 bg-emerald-50 text-emerald-700"
                   : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
               }`}
             >
               <span>필터</span>
-              {(filterTime !== "all" || filterPack !== "all") && (
+              {(filterDate !== "all" || filterTime !== "all" || filterPack !== "all") && (
                 <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] text-white">
-                  {(filterTime !== "all" ? 1 : 0) + (filterPack !== "all" ? 1 : 0)}
+                  {(filterDate !== "all" ? 1 : 0) + (filterTime !== "all" ? 1 : 0) + (filterPack !== "all" ? 1 : 0)}
                 </span>
               )}
               <span className="text-xs">{filterOpen ? "▲" : "▼"}</span>
@@ -4181,6 +4201,19 @@ function SellerDetail({
       >
         {filterOpen && (
           <div className="mb-4 flex flex-wrap items-center gap-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-slate-600">날짜</span>
+              <select
+                value={filterDate}
+                onChange={(e) => setFilterDate(e.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+              >
+                <option value="all">전체</option>
+                {availableDates.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-slate-600">시간</span>
               <select
@@ -4207,10 +4240,10 @@ function SellerDetail({
                 ))}
               </select>
             </div>
-            {(filterTime !== "all" || filterPack !== "all") && (
+            {(filterDate !== "all" || filterTime !== "all" || filterPack !== "all") && (
               <button
                 type="button"
-                onClick={() => { setFilterTime("all"); setFilterPack("all"); }}
+                onClick={() => { setFilterDate("all"); setFilterTime("all"); setFilterPack("all"); }}
                 className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100"
               >
                 초기화
