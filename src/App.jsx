@@ -2432,6 +2432,12 @@ function MainDashboard({
   const [selectedProductIds, setSelectedProductIds] = useState(() => new Set());
   const [deletingRows, setDeletingRows] = useState(false);
   const [mainTimelineMap, setMainTimelineMap] = useState({});
+  const [filterPack, setFilterPack] = useState("all");
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo, setFilterDateTo] = useState("");
+  const [filterTimeFrom, setFilterTimeFrom] = useState("");
+  const [filterTimeTo, setFilterTimeTo] = useState("");
+  const [sortByTime, setSortByTime] = useState("none"); // "none" | "asc" | "desc"
   const allSeriesDefs = useMemo(
     () =>
       ["naver", "coupang"].flatMap((ch) =>
@@ -2475,16 +2481,51 @@ function MainDashboard({
     };
   }, [allSeriesDefs]);
 
+  const availablePackValues = useMemo(() => {
+    const packSet = new Set(
+      offers.map((o) => String(o.pack)).filter((v) => v && v !== "0"),
+    );
+    return Array.from(packSet).sort((a, b) => Number(a) - Number(b));
+  }, [offers]);
+
   const filteredOffers = useMemo(() => {
     const thr = Number.isFinite(safeSettings.threshold)
       ? safeSettings.threshold
       : Infinity;
 
-    return offers
+    let result = offers
       .filter((o) => channelFilter === "all" || o.channel === channelFilter)
       .filter((o) => o.unitPrice <= thr)
-      .map((o) => ({ ...o, __rowKey: o.id }));
-  }, [offers, safeSettings, channelFilter]);
+      .filter((o) => filterPack === "all" || String(o.pack) === filterPack)
+      .filter((o) => {
+        if (!filterDateFrom && !filterDateTo) return true;
+        const dateStr = o.capturedAt ? String(o.capturedAt).slice(0, 10) : null;
+        if (!dateStr) return true;
+        if (filterDateFrom && dateStr < filterDateFrom) return false;
+        if (filterDateTo && dateStr > filterDateTo) return false;
+        return true;
+      })
+      .filter((o) => {
+        if (!filterTimeFrom && !filterTimeTo) return true;
+        const timeStr = o.capturedAt ? String(o.capturedAt).slice(11, 16) : null;
+        if (!timeStr) return true;
+        if (filterTimeFrom && timeStr < filterTimeFrom) return false;
+        if (filterTimeTo && timeStr > filterTimeTo) return false;
+        return true;
+      });
+
+    if (sortByTime !== "none") {
+      result = [...result].sort((a, b) => {
+        const ta = String(a.capturedAt || "");
+        const tb = String(b.capturedAt || "");
+        return sortByTime === "asc"
+          ? ta.localeCompare(tb)
+          : tb.localeCompare(ta);
+      });
+    }
+
+    return result.map((o) => ({ ...o, __rowKey: o.id }));
+  }, [offers, safeSettings, channelFilter, filterPack, filterDateFrom, filterDateTo, filterTimeFrom, filterTimeTo, sortByTime]);
 
   const totalOffersPages = Math.max(
     1,
@@ -2511,7 +2552,7 @@ function MainDashboard({
 
   useEffect(() => {
     setOffersPage(1);
-  }, [channelFilter, safeSettings.threshold]);
+  }, [channelFilter, safeSettings.threshold, filterPack, filterDateFrom, filterDateTo, filterTimeFrom, filterTimeTo, sortByTime]);
 
   useEffect(() => {
     if (offersPage > totalOffersPages) {
@@ -3130,6 +3171,142 @@ function MainDashboard({
           </div>
         }
       >
+        {/* 필터 바 */}
+        <div className="mb-4 flex flex-wrap items-end gap-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+          {/* 수량 필터 */}
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-slate-600">수량</span>
+            <div className="flex flex-wrap gap-1">
+              <button
+                type="button"
+                onClick={() => setFilterPack("all")}
+                className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                  filterPack === "all"
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
+                }`}
+              >
+                전체
+              </button>
+              {availablePackValues.map((pack) => (
+                <button
+                  key={pack}
+                  type="button"
+                  onClick={() => setFilterPack(pack)}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                    filterPack === pack
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
+                  }`}
+                >
+                  {pack}개
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 날짜 필터 */}
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-slate-600">날짜</span>
+            <div className="flex items-center gap-1">
+              <input
+                type="date"
+                value={filterDateFrom}
+                onChange={(e) => setFilterDateFrom(e.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs focus:border-slate-400 focus:outline-none"
+              />
+              <span className="text-xs text-slate-400">~</span>
+              <input
+                type="date"
+                value={filterDateTo}
+                onChange={(e) => setFilterDateTo(e.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs focus:border-slate-400 focus:outline-none"
+              />
+              {(filterDateFrom || filterDateTo) && (
+                <button
+                  type="button"
+                  onClick={() => { setFilterDateFrom(""); setFilterDateTo(""); }}
+                  className="ml-1 text-xs text-slate-400 hover:text-slate-600"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 시간 필터 */}
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-slate-600">시간</span>
+            <div className="flex items-center gap-1">
+              <input
+                type="time"
+                value={filterTimeFrom}
+                onChange={(e) => setFilterTimeFrom(e.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs focus:border-slate-400 focus:outline-none"
+              />
+              <span className="text-xs text-slate-400">~</span>
+              <input
+                type="time"
+                value={filterTimeTo}
+                onChange={(e) => setFilterTimeTo(e.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs focus:border-slate-400 focus:outline-none"
+              />
+              {(filterTimeFrom || filterTimeTo) && (
+                <button
+                  type="button"
+                  onClick={() => { setFilterTimeFrom(""); setFilterTimeTo(""); }}
+                  className="ml-1 text-xs text-slate-400 hover:text-slate-600"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 수집시간 정렬 */}
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-slate-600">수집시간 정렬</span>
+            <div className="flex gap-1">
+              {[
+                { key: "none", label: "기본" },
+                { key: "desc", label: "최신순" },
+                { key: "asc", label: "오래된순" },
+              ].map(({ key, label }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setSortByTime(key)}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                    sortByTime === key
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 필터 초기화 */}
+          {(filterPack !== "all" || filterDateFrom || filterDateTo || filterTimeFrom || filterTimeTo || sortByTime !== "none") && (
+            <button
+              type="button"
+              onClick={() => {
+                setFilterPack("all");
+                setFilterDateFrom("");
+                setFilterDateTo("");
+                setFilterTimeFrom("");
+                setFilterTimeTo("");
+                setSortByTime("none");
+              }}
+              className="self-end rounded-lg border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-100"
+            >
+              필터 초기화
+            </button>
+          )}
+        </div>
+
         <Table columns={columns} rows={pagedOffers} />
       </Card>
     </div>
