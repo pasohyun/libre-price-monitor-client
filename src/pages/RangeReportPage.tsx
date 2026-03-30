@@ -84,6 +84,9 @@ export default function RangeReportPage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [expandedSellers, setExpandedSellers] = useState<Set<number>>(new Set());
 
+  // 셀러 카드 필터 (선택된 셀러만 표시, 빈 Set = 전체)
+  const [selectedCardSellers, setSelectedCardSellers] = useState<Set<string>>(new Set());
+
 
   const onFetch = async () => {
     setLoading(true);
@@ -191,6 +194,9 @@ export default function RangeReportPage() {
     );
     return sellerCardsRaw
       .filter((c: any) => visibleSellers.has(`${c.seller_name}||${c.platform}`))
+      .filter((c: any) =>
+        selectedCardSellers.size === 0 || selectedCardSellers.has(`${c.seller_name}||${c.platform}`),
+      )
       .map((c: any) => {
         if (!hasDateTimeFilter || !Array.isArray(c.chart_data)) return c;
         const filteredChart = c.chart_data.filter((p: any) => {
@@ -214,7 +220,20 @@ export default function RangeReportPage() {
         };
       })
       .filter(Boolean);
-  }, [sellerCardsRaw, belowList, hasDateTimeFilter, filterDate, filterHour]);
+  }, [sellerCardsRaw, belowList, hasDateTimeFilter, filterDate, filterHour, selectedCardSellers]);
+
+  // 셀러 카드 필터에 표시할 셀러 목록 (belowList 기준 필터 적용 후 남은 셀러들)
+  const availableCardSellers = React.useMemo(() => {
+    const visibleSellers = new Set(
+      belowList.map((r: any) => `${r.seller_name}||${r.platform}`),
+    );
+    return sellerCardsRaw
+      .filter((c: any) => visibleSellers.has(`${c.seller_name}||${c.platform}`))
+      .map((c: any) => ({
+        key: `${c.seller_name}||${c.platform}`,
+        label: `${c.seller_name} (${c.platform})`,
+      }));
+  }, [sellerCardsRaw, belowList]);
 
   return (
     <div style={{ padding: 24, maxWidth: 1200, margin: "0 auto" }}>
@@ -653,6 +672,69 @@ export default function RangeReportPage() {
             {/* ③ 셀러별 상세 카드 */}
             <div style={sectionCard}>
               <h3 style={{ marginTop: 0 }}>③ 셀러별 상세 카드</h3>
+
+              {/* 셀러 선택 필터 */}
+              {availableCardSellers.length > 0 && (
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 6,
+                    marginBottom: 14,
+                    alignItems: "center",
+                  }}
+                >
+                  <span style={{ fontSize: 13, fontWeight: 600, marginRight: 4 }}>
+                    셀러 필터:
+                  </span>
+                  <button
+                    onClick={() => setSelectedCardSellers(new Set())}
+                    style={{
+                      padding: "4px 10px",
+                      fontSize: 12,
+                      borderRadius: 16,
+                      border: "1px solid #d1d5db",
+                      background: selectedCardSellers.size === 0 ? "#2563eb" : "#fff",
+                      color: selectedCardSellers.size === 0 ? "#fff" : "#374151",
+                      cursor: "pointer",
+                      fontWeight: 600,
+                    }}
+                  >
+                    전체
+                  </button>
+                  {availableCardSellers.map((s) => {
+                    const active = selectedCardSellers.has(s.key);
+                    return (
+                      <button
+                        key={s.key}
+                        onClick={() => {
+                          setSelectedCardSellers((prev) => {
+                            const next = new Set(prev);
+                            if (active) {
+                              next.delete(s.key);
+                            } else {
+                              next.add(s.key);
+                            }
+                            return next;
+                          });
+                        }}
+                        style={{
+                          padding: "4px 10px",
+                          fontSize: 12,
+                          borderRadius: 16,
+                          border: "1px solid #d1d5db",
+                          background: active ? "#2563eb" : "#fff",
+                          color: active ? "#fff" : "#374151",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {s.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               {filteredSellerCards.length === 0 ? (
                 <div>(셀러 카드 없음)</div>
               ) : (
