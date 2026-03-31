@@ -2565,7 +2565,7 @@ function MainDashboard({
 
   useEffect(() => {
     setOffersPage(1);
-  }, [channelFilter, safeSettings.threshold, filterPack, filterDateFrom, filterDateTo, filterTimeFrom, filterTimeTo, sortByTime]);
+  }, [channelFilter, safeSettings.threshold, filterPack, filterDates, filterHours, sortByTime]);
 
   useEffect(() => {
     if (offersPage > totalOffersPages) {
