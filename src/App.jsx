@@ -4,6 +4,7 @@ import Report from "./Report.jsx";
 import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import MonthlyReportPage from "./pages/MonthlyReportPage";
 import RangeReportPage from "./pages/RangeReportPage";
+import RawDataExportPage from "./pages/RawDataExportPage";
 
 import {
   LineChart,
@@ -4848,6 +4849,12 @@ export default function App() {
           >
             {"Date Range\nReport"}
           </HeaderNavButton>
+          <HeaderNavButton
+            active={location.pathname === "/raw-export"}
+            onClick={() => navigate("/raw-export")}
+          >
+            {"원본 DB\n엑셀"}
+          </HeaderNavButton>
         </div>
       </div>
     </div>
@@ -4976,6 +4983,17 @@ export default function App() {
                   <GhostButton onClick={goMainDashboard}>← 메인으로</GhostButton>
                 </div>
                 <Report />
+              </div>
+            }
+          />
+          <Route
+            path="/raw-export"
+            element={
+              <div className="space-y-3">
+                <div className="flex justify-end">
+                  <GhostButton onClick={goMainDashboard}>← 메인으로</GhostButton>
+                </div>
+                <RawDataExportPage />
               </div>
             }
           />
