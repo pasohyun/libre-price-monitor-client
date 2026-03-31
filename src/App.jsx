@@ -2433,10 +2433,8 @@ function MainDashboard({
   const [deletingRows, setDeletingRows] = useState(false);
   const [mainTimelineMap, setMainTimelineMap] = useState({});
   const [filterPack, setFilterPack] = useState("all");
-  const [filterDateFrom, setFilterDateFrom] = useState("");
-  const [filterDateTo, setFilterDateTo] = useState("");
-  const [filterTimeFrom, setFilterTimeFrom] = useState("");
-  const [filterTimeTo, setFilterTimeTo] = useState("");
+  const [filterDates, setFilterDates] = useState(() => new Set());
+  const [filterHours, setFilterHours] = useState(() => new Set());
   const [sortByTime, setSortByTime] = useState("none"); // "none" | "asc" | "desc"
   const allSeriesDefs = useMemo(
     () =>
@@ -2488,6 +2486,24 @@ function MainDashboard({
     return Array.from(packSet).sort((a, b) => Number(a) - Number(b));
   }, [offers]);
 
+  const availableDates = useMemo(() => {
+    const dateSet = new Set(
+      offers
+        .map((o) => o.capturedAt ? String(o.capturedAt).slice(0, 10) : null)
+        .filter(Boolean),
+    );
+    return Array.from(dateSet).sort();
+  }, [offers]);
+
+  const availableHours = useMemo(() => {
+    const hourSet = new Set(
+      offers
+        .map((o) => o.capturedAt ? String(o.capturedAt).slice(11, 13) : null)
+        .filter(Boolean),
+    );
+    return Array.from(hourSet).sort();
+  }, [offers]);
+
   const filteredOffers = useMemo(() => {
     const thr = Number.isFinite(safeSettings.threshold)
       ? safeSettings.threshold
@@ -2498,20 +2514,16 @@ function MainDashboard({
       .filter((o) => o.unitPrice <= thr)
       .filter((o) => filterPack === "all" || String(o.pack) === filterPack)
       .filter((o) => {
-        if (!filterDateFrom && !filterDateTo) return true;
+        if (filterDates.size === 0) return true;
         const dateStr = o.capturedAt ? String(o.capturedAt).slice(0, 10) : null;
-        if (!dateStr) return true;
-        if (filterDateFrom && dateStr < filterDateFrom) return false;
-        if (filterDateTo && dateStr > filterDateTo) return false;
-        return true;
+        if (!dateStr) return false;
+        return filterDates.has(dateStr);
       })
       .filter((o) => {
-        if (!filterTimeFrom && !filterTimeTo) return true;
-        const timeStr = o.capturedAt ? String(o.capturedAt).slice(11, 16) : null;
-        if (!timeStr) return true;
-        if (filterTimeFrom && timeStr < filterTimeFrom) return false;
-        if (filterTimeTo && timeStr > filterTimeTo) return false;
-        return true;
+        if (filterHours.size === 0) return true;
+        const hourStr = o.capturedAt ? String(o.capturedAt).slice(11, 13) : null;
+        if (!hourStr) return false;
+        return filterHours.has(hourStr);
       });
 
     if (sortByTime !== "none") {
@@ -2525,7 +2537,7 @@ function MainDashboard({
     }
 
     return result.map((o) => ({ ...o, __rowKey: o.id }));
-  }, [offers, safeSettings, channelFilter, filterPack, filterDateFrom, filterDateTo, filterTimeFrom, filterTimeTo, sortByTime]);
+  }, [offers, safeSettings, channelFilter, filterPack, filterDates, filterHours, sortByTime]);
 
   const totalOffersPages = Math.max(
     1,
@@ -3206,62 +3218,86 @@ function MainDashboard({
           </div>
 
           {/* 날짜 필터 */}
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-slate-600">날짜</span>
-            <div className="flex items-center gap-1">
-              <input
-                type="date"
-                value={filterDateFrom}
-                onChange={(e) => setFilterDateFrom(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs focus:border-slate-400 focus:outline-none"
-              />
-              <span className="text-xs text-slate-400">~</span>
-              <input
-                type="date"
-                value={filterDateTo}
-                onChange={(e) => setFilterDateTo(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs focus:border-slate-400 focus:outline-none"
-              />
-              {(filterDateFrom || filterDateTo) && (
+          {availableDates.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-slate-600">날짜</span>
+              <div className="flex flex-wrap gap-1">
                 <button
                   type="button"
-                  onClick={() => { setFilterDateFrom(""); setFilterDateTo(""); }}
-                  className="ml-1 text-xs text-slate-400 hover:text-slate-600"
+                  onClick={() => setFilterDates(new Set())}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                    filterDates.size === 0
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
+                  }`}
                 >
-                  ✕
+                  전체
                 </button>
-              )}
+                {availableDates.map((date) => (
+                  <button
+                    key={date}
+                    type="button"
+                    onClick={() => {
+                      setFilterDates((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(date)) next.delete(date);
+                        else next.add(date);
+                        return next;
+                      });
+                    }}
+                    className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                      filterDates.has(date)
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
+                    }`}
+                  >
+                    {date.slice(5)}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* 시간 필터 */}
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-slate-600">시간</span>
-            <div className="flex items-center gap-1">
-              <input
-                type="time"
-                value={filterTimeFrom}
-                onChange={(e) => setFilterTimeFrom(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs focus:border-slate-400 focus:outline-none"
-              />
-              <span className="text-xs text-slate-400">~</span>
-              <input
-                type="time"
-                value={filterTimeTo}
-                onChange={(e) => setFilterTimeTo(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs focus:border-slate-400 focus:outline-none"
-              />
-              {(filterTimeFrom || filterTimeTo) && (
+          {availableHours.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-slate-600">시간</span>
+              <div className="flex flex-wrap gap-1">
                 <button
                   type="button"
-                  onClick={() => { setFilterTimeFrom(""); setFilterTimeTo(""); }}
-                  className="ml-1 text-xs text-slate-400 hover:text-slate-600"
+                  onClick={() => setFilterHours(new Set())}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                    filterHours.size === 0
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
+                  }`}
                 >
-                  ✕
+                  전체
                 </button>
-              )}
+                {availableHours.map((hour) => (
+                  <button
+                    key={hour}
+                    type="button"
+                    onClick={() => {
+                      setFilterHours((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(hour)) next.delete(hour);
+                        else next.add(hour);
+                        return next;
+                      });
+                    }}
+                    className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                      filterHours.has(hour)
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
+                    }`}
+                  >
+                    {hour}시
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* 수집시간 정렬 */}
           <div className="flex flex-col gap-1">
@@ -3289,15 +3325,13 @@ function MainDashboard({
           </div>
 
           {/* 필터 초기화 */}
-          {(filterPack !== "all" || filterDateFrom || filterDateTo || filterTimeFrom || filterTimeTo || sortByTime !== "none") && (
+          {(filterPack !== "all" || filterDates.size > 0 || filterHours.size > 0 || sortByTime !== "none") && (
             <button
               type="button"
               onClick={() => {
                 setFilterPack("all");
-                setFilterDateFrom("");
-                setFilterDateTo("");
-                setFilterTimeFrom("");
-                setFilterTimeTo("");
+                setFilterDates(new Set());
+                setFilterHours(new Set());
                 setSortByTime("none");
               }}
               className="self-end rounded-lg border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-100"
