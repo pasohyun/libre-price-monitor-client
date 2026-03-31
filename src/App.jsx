@@ -3937,6 +3937,22 @@ function SellerDetail({
   }, [channelKey, sellerName]);
 
   const timeline = timelineData;
+  const latestSellerUrl = useMemo(() => {
+    const found = timeline.find((t) => {
+      const u = String(t?.url || "").trim();
+      return u && u !== "#";
+    });
+    return found?.url || "";
+  }, [timeline]);
+  const fallbackSearchUrl = useMemo(() => {
+    const q = encodeURIComponent(`${sellerName} 프리스타일 리브레 2`);
+    if (channelKey === "coupang") return `https://www.coupang.com/np/search?q=${q}`;
+    if (channelKey === "naver") {
+      return `https://search.shopping.naver.com/search/all?query=${q}`;
+    }
+    return `https://www.google.com/search?q=${q}`;
+  }, [channelKey, sellerName]);
+  const externalCheckUrl = latestSellerUrl || fallbackSearchUrl;
 
   const sellerAvg = useMemo(() => {
     if (!timeline.length) return null;
@@ -4321,6 +4337,25 @@ function SellerDetail({
           </Card>
         </div>
       </div>
+
+      {!timelineLoading && rows.length === 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <div>현재 조건에서 연결된 데이터가 없어 비어 보입니다.</div>
+          <div className="mt-1 text-amber-800">
+            {timeline.length === 0
+              ? "해당 판매처 상세가 아직 수집되지 않았을 수 있습니다."
+              : "필터/기준가 조건으로 결과가 제외되었을 수 있습니다."}
+          </div>
+          <a
+            href={externalCheckUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-3 inline-flex rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-semibold text-amber-800 hover:bg-amber-100"
+          >
+            판매처 페이지 확인
+          </a>
+        </div>
+      )}
 
       <Card
         title="판매정보 + 캡처본(타임라인)"
