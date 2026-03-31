@@ -2488,21 +2488,25 @@ function MainDashboard({
   }, [offers]);
 
   const availableDates = useMemo(() => {
-    const dateSet = new Set(
-      offers
-        .map((o) => o.capturedAt ? String(o.capturedAt).slice(0, 10) : null)
-        .filter(Boolean),
-    );
-    return Array.from(dateSet).sort();
+    const dateSet = new Set();
+    for (const o of offers) {
+      const d = parseDateLike(o.capturedAtMs);
+      if (!d) continue;
+      const kst = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+      dateSet.add(`${kst.getFullYear()}-${String(kst.getMonth() + 1).padStart(2, "0")}-${String(kst.getDate()).padStart(2, "0")}`);
+    }
+    return [...dateSet].sort();
   }, [offers]);
 
   const availableHours = useMemo(() => {
-    const hourSet = new Set(
-      offers
-        .map((o) => o.capturedAt ? String(o.capturedAt).slice(11, 13) : null)
-        .filter(Boolean),
-    );
-    return Array.from(hourSet).sort();
+    const hourSet = new Set();
+    for (const o of offers) {
+      const d = parseDateLike(o.capturedAtMs);
+      if (!d) continue;
+      const kst = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+      hourSet.add(String(kst.getHours()).padStart(2, "0"));
+    }
+    return [...hourSet].sort();
   }, [offers]);
 
   const filteredOffers = useMemo(() => {
@@ -2516,12 +2520,18 @@ function MainDashboard({
       .filter((o) => filterPack === "all" || String(o.pack) === filterPack)
       .filter((o) => {
         if (filterDate === "all") return true;
-        const dateStr = o.capturedAt ? String(o.capturedAt).slice(0, 10) : null;
+        const d = parseDateLike(o.capturedAtMs);
+        if (!d) return false;
+        const kst = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+        const dateStr = `${kst.getFullYear()}-${String(kst.getMonth() + 1).padStart(2, "0")}-${String(kst.getDate()).padStart(2, "0")}`;
         return dateStr === filterDate;
       })
       .filter((o) => {
         if (filterHour === "all") return true;
-        const hourStr = o.capturedAt ? String(o.capturedAt).slice(11, 13) : null;
+        const d = parseDateLike(o.capturedAtMs);
+        if (!d) return false;
+        const kst = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+        const hourStr = String(kst.getHours()).padStart(2, "0");
         return hourStr === filterHour;
       });
 
