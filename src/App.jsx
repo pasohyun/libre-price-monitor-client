@@ -2434,8 +2434,8 @@ function MainDashboard({
   const [deletingRows, setDeletingRows] = useState(false);
   const [mainTimelineMap, setMainTimelineMap] = useState({});
   const [filterPack, setFilterPack] = useState("all");
-  const [filterDates, setFilterDates] = useState(() => new Set());
-  const [filterHours, setFilterHours] = useState(() => new Set());
+  const [filterDate, setFilterDate] = useState("all");
+  const [filterHour, setFilterHour] = useState("all");
   const [sortByTime, setSortByTime] = useState("none"); // "none" | "asc" | "desc"
   const allSeriesDefs = useMemo(
     () =>
@@ -2515,16 +2515,14 @@ function MainDashboard({
       .filter((o) => o.unitPrice <= thr)
       .filter((o) => filterPack === "all" || String(o.pack) === filterPack)
       .filter((o) => {
-        if (filterDates.size === 0) return true;
+        if (filterDate === "all") return true;
         const dateStr = o.capturedAt ? String(o.capturedAt).slice(0, 10) : null;
-        if (!dateStr) return false;
-        return filterDates.has(dateStr);
+        return dateStr === filterDate;
       })
       .filter((o) => {
-        if (filterHours.size === 0) return true;
+        if (filterHour === "all") return true;
         const hourStr = o.capturedAt ? String(o.capturedAt).slice(11, 13) : null;
-        if (!hourStr) return false;
-        return filterHours.has(hourStr);
+        return hourStr === filterHour;
       });
 
     if (sortByTime !== "none") {
@@ -2538,7 +2536,7 @@ function MainDashboard({
     }
 
     return result.map((o) => ({ ...o, __rowKey: o.id }));
-  }, [offers, safeSettings, channelFilter, filterPack, filterDates, filterHours, sortByTime]);
+  }, [offers, safeSettings, channelFilter, filterPack, filterDate, filterHour, sortByTime]);
 
   const totalOffersPages = Math.max(
     1,
@@ -2565,7 +2563,7 @@ function MainDashboard({
 
   useEffect(() => {
     setOffersPage(1);
-  }, [channelFilter, safeSettings.threshold, filterPack, filterDates, filterHours, sortByTime]);
+  }, [channelFilter, safeSettings.threshold, filterPack, filterDate, filterHour, sortByTime]);
 
   useEffect(() => {
     if (offersPage > totalOffersPages) {
@@ -3220,83 +3218,35 @@ function MainDashboard({
 
           {/* 날짜 필터 */}
           {availableDates.length > 0 && (
-            <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
               <span className="text-xs font-medium text-slate-600">날짜</span>
-              <div className="flex flex-wrap gap-1">
-                <button
-                  type="button"
-                  onClick={() => setFilterDates(new Set())}
-                  className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
-                    filterDates.size === 0
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
-                  }`}
-                >
-                  전체
-                </button>
+              <select
+                value={filterDate}
+                onChange={(e) => setFilterDate(e.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
+              >
+                <option value="all">전체</option>
                 {availableDates.map((date) => (
-                  <button
-                    key={date}
-                    type="button"
-                    onClick={() => {
-                      setFilterDates((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(date)) next.delete(date);
-                        else next.add(date);
-                        return next;
-                      });
-                    }}
-                    className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
-                      filterDates.has(date)
-                        ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
-                    }`}
-                  >
-                    {date.slice(5)}
-                  </button>
+                  <option key={date} value={date}>{date}</option>
                 ))}
-              </div>
+              </select>
             </div>
           )}
 
           {/* 시간 필터 */}
           {availableHours.length > 0 && (
-            <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
               <span className="text-xs font-medium text-slate-600">시간</span>
-              <div className="flex flex-wrap gap-1">
-                <button
-                  type="button"
-                  onClick={() => setFilterHours(new Set())}
-                  className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
-                    filterHours.size === 0
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
-                  }`}
-                >
-                  전체
-                </button>
+              <select
+                value={filterHour}
+                onChange={(e) => setFilterHour(e.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
+              >
+                <option value="all">전체</option>
                 {availableHours.map((hour) => (
-                  <button
-                    key={hour}
-                    type="button"
-                    onClick={() => {
-                      setFilterHours((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(hour)) next.delete(hour);
-                        else next.add(hour);
-                        return next;
-                      });
-                    }}
-                    className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
-                      filterHours.has(hour)
-                        ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
-                    }`}
-                  >
-                    {hour}시
-                  </button>
+                  <option key={hour} value={hour}>{hour}시</option>
                 ))}
-              </div>
+              </select>
             </div>
           )}
 
@@ -3326,13 +3276,13 @@ function MainDashboard({
           </div>
 
           {/* 필터 초기화 */}
-          {(filterPack !== "all" || filterDates.size > 0 || filterHours.size > 0 || sortByTime !== "none") && (
+          {(filterPack !== "all" || filterDate !== "all" || filterHour !== "all" || sortByTime !== "none") && (
             <button
               type="button"
               onClick={() => {
                 setFilterPack("all");
-                setFilterDates(new Set());
-                setFilterHours(new Set());
+                setFilterDate("all");
+                setFilterHour("all");
                 setSortByTime("none");
               }}
               className="self-end rounded-lg border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-100"
