@@ -64,6 +64,20 @@ const sectionCard: React.CSSProperties = {
   marginBottom: 16,
 };
 
+const printStyles = `
+@media print {
+  body * { visibility: hidden !important; }
+  #range-report-printable, #range-report-printable * { visibility: visible !important; }
+  #range-report-printable {
+    position: absolute; left: 0; top: 0; width: 100%;
+    padding: 16px;
+  }
+  #range-report-printable .print-header { display: block !important; }
+  .no-print { display: none !important; }
+  @page { margin: 10mm; }
+}
+`;
+
 export default function RangeReportPage() {
   const [startDate, setStartDate] = useState(thirtyDaysAgoStr());
   const [endDate, setEndDate] = useState(todayStr());
@@ -256,10 +270,12 @@ export default function RangeReportPage() {
 
   return (
     <div style={{ padding: 24, maxWidth: 1200, margin: "0 auto" }}>
+      <style dangerouslySetInnerHTML={{ __html: printStyles }} />
       <h2 style={{ marginBottom: 16 }}>기간별 리포트</h2>
 
       {/* 입력 폼 */}
       <div
+        className="no-print"
         style={{
           display: "grid",
           gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
@@ -357,7 +373,34 @@ export default function RangeReportPage() {
 
       {data && (
         <div>
-          <div>
+          {/* 인쇄/PDF 버튼 */}
+          <div className="no-print" style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+            <button
+              onClick={() => window.print()}
+              style={{
+                padding: "8px 18px",
+                borderRadius: 10,
+                border: "1px solid #d1d5db",
+                background: "#fff",
+                cursor: "pointer",
+                fontSize: 13,
+                fontWeight: 600,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              PDF 다운로드 / 인쇄
+            </button>
+          </div>
+          <div id="range-report-printable">
+            {/* 인쇄용 헤더 */}
+            <div style={{ display: "none" }} className="print-header">
+              <h2>기간별 리포트</h2>
+              <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 12 }}>
+                {startDate} ~ {endDate} | 기준가: {fmtMoney(thresholdPrice)} | 채널: {channel}
+              </div>
+            </div>
             {/* ① Summary */}
             <div style={sectionCard}>
               <h3 style={{ marginTop: 0 }}>① 요약 (Summary)</h3>
@@ -908,7 +951,6 @@ export default function RangeReportPage() {
               )}
             </div>
           </div>
-
         </div>
       )}
       {/* Evidence 카드 모달 — 메인 HtmlCardModal과 동일한 UI */}
