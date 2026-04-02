@@ -147,16 +147,18 @@ export default function RangeReportPage() {
   const hasDateTimeFilter = filterDate !== "" || filterHour !== "";
   const hasSnapshotFilter = hasDateTimeFilter || filterQuantity !== "" || priceMin !== "" || priceMax !== "";
   const hasChartFilter = hasDateTimeFilter || filterQuantity !== ""; // 차트용: 단가 필터 제외
+  // 리스트 기본 상한: 사용자가 단가 이하 필터를 안 걸었으면 API 기준가 적용
+  const effectivePriceMax = priceMax !== "" ? priceMax : thresholdPrice;
+
   const belowList = belowListRaw
     .map((r: any) => {
       const snaps: any[] = Array.isArray(r?.snapshots) ? r.snapshots : [];
-      if (!hasSnapshotFilter) return r;
-      // 스냅샷 레벨에서 날짜/시간/수량/단가 필터 적용
+      // 스냅샷 레벨에서 날짜/시간/수량/단가 필터 적용 (기준가 기본 상한 항상 적용)
       const filtered = snaps.filter((s: any) => {
         if (!matchesDateTime(s?.time)) return false;
         if (filterQuantity !== "" && (s?.quantity ?? 0) !== filterQuantity) return false;
         if (priceMin !== "" && (s?.unit_price ?? 0) < priceMin) return false;
-        if (priceMax !== "" && (s?.unit_price ?? 0) > priceMax) return false;
+        if ((s?.unit_price ?? 0) > effectivePriceMax) return false;
         return true;
       });
       if (filtered.length === 0) return null;
