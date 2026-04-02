@@ -494,7 +494,7 @@ export default function RangeReportPage() {
                       >
                         <thead>
                           <tr>
-                            {["거래처명", "최저 단가", "플랫폼"].map((h) => (
+                            {["거래처명", "최저 단가", "시점", "플랫폼"].map((h) => (
                               <th
                                 key={h}
                                 style={{
@@ -529,6 +529,16 @@ export default function RangeReportPage() {
                                 {fmtMoney(
                                   item?.min_unit_price ?? item?.min_price,
                                 )}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "6px",
+                                  borderBottom: "1px solid #f3f4f6",
+                                  fontSize: 12,
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {fmtTime(item?.min_time)}
                               </td>
                               <td
                                 style={{
