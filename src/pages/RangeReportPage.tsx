@@ -75,6 +75,11 @@ const printStyles = `
   }
   #range-report-printable .print-header { display: block !important; }
   .no-print { display: none !important; }
+  /* 차트 툴팁/커서 숨김 + 컨테이너 overflow 방지 */
+  .recharts-tooltip-wrapper,
+  .recharts-active-dot,
+  .recharts-tooltip-cursor { display: none !important; }
+  .recharts-responsive-container { overflow: hidden !important; }
   @page { margin: 10mm; }
 }
 `;
