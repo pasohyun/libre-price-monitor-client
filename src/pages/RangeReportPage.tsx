@@ -205,17 +205,45 @@ export default function RangeReportPage() {
     ? data.seller_cards
     : [];
 
-  // 필터링된 belowList에 존재하는 셀러만 카드에 표시 + 차트 데이터도 날짜/시간 필터 적용
+  // 필터링된 belowList에 존재하는 셀러만 카드에 표시 + 필터 시 스냅샷 기반 차트 재구성
   const filteredSellerCards = React.useMemo(() => {
-    // belowList에서 셀러별 필터된 정보를 맵으로 구성
+    // belowList에서 셀러별 필터된 스냅샷을 맵으로 구성
     const sellerInfoMap = new Map<string, any>();
+    const sellerSnapsMap = new Map<string, any[]>();
     for (const r of belowList) {
       const key = `${r.seller_name}||${r.platform}`;
       const existing = sellerInfoMap.get(key);
       if (!existing || r.unit_price < existing.unit_price) {
         sellerInfoMap.set(key, r);
       }
+      const prev = sellerSnapsMap.get(key) || [];
+      sellerSnapsMap.set(key, [...prev, ...(Array.isArray(r?.snapshots) ? r.snapshots : [])]);
     }
+
+    // 스냅샷 배열 → chart_data 포맷으로 변환
+    const buildChartFromSnaps = (snaps: any[]) => {
+      const bucketMap = new Map<string, number>();
+      for (const s of snaps) {
+        if (!s?.time || !s?.unit_price) continue;
+        const d = new Date(s.time);
+        if (Number.isNaN(d.getTime())) continue;
+        const kst = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+        const dateStr = `${kst.getFullYear()}-${String(kst.getMonth() + 1).padStart(2, "0")}-${String(kst.getDate()).padStart(2, "0")}`;
+        const timeStr = `${String(kst.getHours()).padStart(2, "0")}:${String(kst.getMinutes()).padStart(2, "0")}`;
+        const bucketKey = `${dateStr}||${timeStr}`;
+        const prev = bucketMap.get(bucketKey);
+        if (prev === undefined || s.unit_price < prev) {
+          bucketMap.set(bucketKey, s.unit_price);
+        }
+      }
+      return Array.from(bucketMap.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, minPrice]) => {
+          const [date, time] = k.split("||");
+          return { date, time, min_price: minPrice };
+        });
+    };
+
     return sellerCardsRaw
       .filter((c: any) => sellerInfoMap.has(`${c.seller_name}||${c.platform}`))
       .filter((c: any) =>
@@ -224,7 +252,6 @@ export default function RangeReportPage() {
       .map((c: any) => {
         const key = `${c.seller_name}||${c.platform}`;
         const info = sellerInfoMap.get(key);
-        // belowList 필터 결과로 카드 대표 정보 업데이트
         const updated = {
           ...c,
           min_unit_price: info?.unit_price ?? c.min_unit_price,
@@ -232,28 +259,15 @@ export default function RangeReportPage() {
           total_price: info?.total_price ?? c.total_price,
           min_time: info?.time ?? c.min_time,
         };
-        if (!hasDateTimeFilter || !Array.isArray(updated.chart_data)) return updated;
-        const filteredChart = updated.chart_data.filter((p: any) => {
-          if (!p) return false;
-          if (filterDate && p.date !== filterDate) return false;
-          if (filterHour && p.time) {
-            const hour = p.time.split(":")[0];
-            if (hour !== filterHour) return false;
-          }
-          return true;
-        });
-        if (filteredChart.length === 0) return { ...updated, chart_data: [] };
-        const minPrice = Math.min(...filteredChart.map((p: any) => p.min_price));
-        const minPoint = filteredChart.find((p: any) => p.min_price === minPrice);
-        return {
-          ...updated,
-          chart_data: filteredChart,
-          min_unit_price: info?.unit_price ?? minPrice,
-          min_time: info?.time ?? (minPoint ? (minPoint.time ? `${minPoint.date} ${minPoint.time}` : minPoint.date) : c.min_time),
-        };
+        // 필터 없으면 서버 원본 chart_data 사용
+        if (!hasSnapshotFilter) return updated;
+        // 필터 있으면 필터된 스냅샷으로 차트 재구성
+        const snaps = sellerSnapsMap.get(key) || [];
+        const chartData = buildChartFromSnaps(snaps);
+        return { ...updated, chart_data: chartData };
       })
       .filter(Boolean);
-  }, [sellerCardsRaw, belowList, hasDateTimeFilter, filterDate, filterHour, selectedCardSellers]);
+  }, [sellerCardsRaw, belowList, hasSnapshotFilter, selectedCardSellers]);
 
   // 셀러 카드 필터에 표시할 셀러 목록 (belowList 기준 필터 적용 후 남은 셀러들)
   const availableCardSellers = React.useMemo(() => {
