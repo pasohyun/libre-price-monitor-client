@@ -67,35 +67,32 @@ const sectionCard: React.CSSProperties = {
 
 const printStyles = `
 @media print {
-  body * { visibility: hidden !important; }
-  #range-report-printable, #range-report-printable * { visibility: visible !important; }
-  #range-report-printable {
-    position: absolute; left: 0; top: 0; width: 100%;
-    padding: 16px;
-  }
-  #range-report-printable .print-header { display: block !important; }
+  /* 인쇄 영역 외 요소 숨김 */
+  body > *:not(#root) { display: none !important; }
+  #root > *:not([style]) { display: none !important; }
   .no-print { display: none !important; }
-  @page { margin: 10mm; }
 
-  /* 차트가 카드 밖으로 삐져나오지 않도록 */
-  #range-report-printable .recharts-responsive-container {
-    overflow: hidden !important;
-    max-width: 100% !important;
+  #range-report-printable .print-header { display: block !important; }
+
+  /* 차트 크기 고정 (ResponsiveContainer가 인쇄 시 0이 되는 문제 방지) */
+  .recharts-responsive-container {
+    width: 100% !important;
+    height: 200px !important;
+    min-height: 200px !important;
   }
-  #range-report-printable .recharts-wrapper,
-  #range-report-printable .recharts-wrapper svg {
-    max-width: 100% !important;
-    overflow: hidden !important;
+  .recharts-wrapper,
+  .recharts-wrapper svg {
+    width: 100% !important;
+    height: 200px !important;
   }
-  /* 셀러 카드 overflow 제어 */
-  #range-report-printable div[style] {
-    overflow: hidden !important;
-  }
+
   /* 카드 내부 페이지 분리 방지 */
   #range-report-printable > div > div {
     break-inside: avoid;
     page-break-inside: avoid;
   }
+
+  @page { margin: 10mm; }
 }
 `;
 
