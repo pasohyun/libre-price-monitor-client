@@ -67,11 +67,7 @@ const sectionCard: React.CSSProperties = {
 
 const printStyles = `
 @media print {
-  /* 인쇄 영역 외 요소 숨김 */
-  body > *:not(#root) { display: none !important; }
-  #root > *:not([style]) { display: none !important; }
   .no-print { display: none !important; }
-
   #range-report-printable .print-header { display: block !important; }
 
   /* 차트 크기 고정 (ResponsiveContainer가 인쇄 시 0이 되는 문제 방지) */
