@@ -62,6 +62,7 @@ const sectionCard: React.CSSProperties = {
   borderRadius: 12,
   padding: 16,
   marginBottom: 16,
+  overflow: "hidden",
 };
 
 const printStyles = `
@@ -75,6 +76,26 @@ const printStyles = `
   #range-report-printable .print-header { display: block !important; }
   .no-print { display: none !important; }
   @page { margin: 10mm; }
+
+  /* 차트가 카드 밖으로 삐져나오지 않도록 */
+  #range-report-printable .recharts-responsive-container {
+    overflow: hidden !important;
+    max-width: 100% !important;
+  }
+  #range-report-printable .recharts-wrapper,
+  #range-report-printable .recharts-wrapper svg {
+    max-width: 100% !important;
+    overflow: hidden !important;
+  }
+  /* 셀러 카드 overflow 제어 */
+  #range-report-printable div[style] {
+    overflow: hidden !important;
+  }
+  /* 카드 내부 페이지 분리 방지 */
+  #range-report-printable > div > div {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
 }
 `;
 
