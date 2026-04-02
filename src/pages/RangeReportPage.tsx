@@ -205,9 +205,9 @@ export default function RangeReportPage() {
     ? data.seller_cards
     : [];
 
-  // 필터링된 belowList에 존재하는 셀러만 카드에 표시 + 필터 시 스냅샷 기반 차트 재구성
+  // 필터링된 belowList에 존재하는 셀러만 카드에 표시 + 필터 시 리스트와 차트 완전 동기화
   const filteredSellerCards = React.useMemo(() => {
-    // belowList에서 셀러별 필터된 스냅샷을 맵으로 구성
+    // belowList에서 셀러별 최저가 정보 + 필터된 스냅샷 수집
     const sellerInfoMap = new Map<string, any>();
     const sellerSnapsMap = new Map<string, any[]>();
     for (const r of belowList) {
@@ -220,7 +220,7 @@ export default function RangeReportPage() {
       sellerSnapsMap.set(key, [...prev, ...(Array.isArray(r?.snapshots) ? r.snapshots : [])]);
     }
 
-    // 스냅샷 배열 → chart_data 포맷으로 변환
+    // 필터된 스냅샷 → chart_data 포맷으로 변환
     const buildChartFromSnaps = (snaps: any[]) => {
       const bucketMap = new Map<string, number>();
       for (const s of snaps) {
@@ -261,7 +261,7 @@ export default function RangeReportPage() {
         };
         // 필터 없으면 서버 원본 chart_data 사용
         if (!hasSnapshotFilter) return updated;
-        // 필터 있으면 필터된 스냅샷으로 차트 재구성
+        // 필터 있으면 필터된 스냅샷으로 차트 재구성 (리스트와 동일 데이터)
         const snaps = sellerSnapsMap.get(key) || [];
         const chartData = buildChartFromSnaps(snaps);
         return { ...updated, chart_data: chartData };
