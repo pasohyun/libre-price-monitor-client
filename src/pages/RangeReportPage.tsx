@@ -67,27 +67,14 @@ const sectionCard: React.CSSProperties = {
 
 const printStyles = `
 @media print {
-  .no-print { display: none !important; }
+  body * { visibility: hidden !important; }
+  #range-report-printable, #range-report-printable * { visibility: visible !important; }
+  #range-report-printable {
+    position: absolute; left: 0; top: 0; width: 100%;
+    padding: 16px;
+  }
   #range-report-printable .print-header { display: block !important; }
-
-  /* 차트 크기 고정 (ResponsiveContainer가 인쇄 시 0이 되는 문제 방지) */
-  .recharts-responsive-container {
-    width: 100% !important;
-    height: 200px !important;
-    min-height: 200px !important;
-  }
-  .recharts-wrapper,
-  .recharts-wrapper svg {
-    width: 100% !important;
-    height: 200px !important;
-  }
-
-  /* 카드 내부 페이지 분리 방지 */
-  #range-report-printable > div > div {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
+  .no-print { display: none !important; }
   @page { margin: 10mm; }
 }
 `;
