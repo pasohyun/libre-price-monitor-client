@@ -146,6 +146,7 @@ export default function RangeReportPage() {
   // 필터 + 정렬 적용
   const hasDateTimeFilter = filterDate !== "" || filterHour !== "";
   const hasSnapshotFilter = hasDateTimeFilter || filterQuantity !== "" || priceMin !== "" || priceMax !== "";
+  const hasChartFilter = hasDateTimeFilter || filterQuantity !== ""; // 차트용: 단가 필터 제외
   const belowList = belowListRaw
     .map((r: any) => {
       const snaps: any[] = Array.isArray(r?.snapshots) ? r.snapshots : [];
@@ -205,22 +206,37 @@ export default function RangeReportPage() {
     ? data.seller_cards
     : [];
 
-  // 필터링된 belowList에 존재하는 셀러만 카드에 표시 + 필터 시 리스트와 차트 완전 동기화
+  // 차트용 스냅샷: 날짜/시간/수량 필터만 적용 (단가 필터 제외)
+  const chartSnapsBySellerRaw = React.useMemo(() => {
+    if (!hasChartFilter) return null; // null이면 서버 원본 사용
+    const map = new Map<string, any[]>();
+    for (const r of belowListRaw) {
+      const snaps: any[] = Array.isArray(r?.snapshots) ? r.snapshots : [];
+      const key = `${r.seller_name}||${r.platform}`;
+      const filtered = snaps.filter((s: any) => {
+        if (!matchesDateTime(s?.time)) return false;
+        if (filterQuantity !== "" && (s?.quantity ?? 0) !== filterQuantity) return false;
+        return true;
+      });
+      const prev = map.get(key) || [];
+      map.set(key, [...prev, ...filtered]);
+    }
+    return map;
+  }, [belowListRaw, hasChartFilter, filterDate, filterHour, filterQuantity]);
+
+  // 필터링된 belowList에 존재하는 셀러만 카드에 표시 + 차트는 단가 필터 제외
   const filteredSellerCards = React.useMemo(() => {
-    // belowList에서 셀러별 최저가 정보 + 필터된 스냅샷 수집
+    // belowList에서 셀러별 최저가 정보 구성
     const sellerInfoMap = new Map<string, any>();
-    const sellerSnapsMap = new Map<string, any[]>();
     for (const r of belowList) {
       const key = `${r.seller_name}||${r.platform}`;
       const existing = sellerInfoMap.get(key);
       if (!existing || r.unit_price < existing.unit_price) {
         sellerInfoMap.set(key, r);
       }
-      const prev = sellerSnapsMap.get(key) || [];
-      sellerSnapsMap.set(key, [...prev, ...(Array.isArray(r?.snapshots) ? r.snapshots : [])]);
     }
 
-    // 필터된 스냅샷 → chart_data 포맷으로 변환
+    // 스냅샷 → chart_data 포맷 변환
     const buildChartFromSnaps = (snaps: any[]) => {
       const bucketMap = new Map<string, number>();
       for (const s of snaps) {
@@ -259,15 +275,15 @@ export default function RangeReportPage() {
           total_price: info?.total_price ?? c.total_price,
           min_time: info?.time ?? c.min_time,
         };
-        // 필터 없으면 서버 원본 chart_data 사용
-        if (!hasSnapshotFilter) return updated;
-        // 필터 있으면 필터된 스냅샷으로 차트 재구성 (리스트와 동일 데이터)
-        const snaps = sellerSnapsMap.get(key) || [];
+        // 차트 필터(날짜/시간/수량) 없으면 서버 원본 chart_data 사용
+        if (!chartSnapsBySellerRaw) return updated;
+        // 차트 필터 있으면 단가 제외한 필터로 차트 재구성
+        const snaps = chartSnapsBySellerRaw.get(key) || [];
         const chartData = buildChartFromSnaps(snaps);
         return { ...updated, chart_data: chartData };
       })
       .filter(Boolean);
-  }, [sellerCardsRaw, belowList, hasSnapshotFilter, selectedCardSellers]);
+  }, [sellerCardsRaw, belowList, chartSnapsBySellerRaw, selectedCardSellers]);
 
   // 셀러 카드 필터에 표시할 셀러 목록 (belowList 기준 필터 적용 후 남은 셀러들)
   const availableCardSellers = React.useMemo(() => {
