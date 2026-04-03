@@ -1,5 +1,6 @@
 // src/pages/RawDataExportPage.jsx
 import { useMemo, useState } from "react";
+import { authFetch } from "../api/authFetch";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 const PRESET_KEY = "raw_export_presets_v1";
@@ -99,7 +100,7 @@ export default function RawDataExportPage() {
         channel,
         header_kr: headerKr ? "true" : "false",
       });
-      const res = await fetch(`${API_BASE}/products/export/raw?${qs.toString()}`);
+      const res = await authFetch(`${API_BASE}/products/export/raw?${qs.toString()}`);
       if (!res.ok) {
         let msg = `요청 실패 (${res.status})`;
         try {

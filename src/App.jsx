@@ -20,6 +20,13 @@ import {
   ReferenceLine,
 } from "recharts";
 
+import {
+  authFetch,
+  clearDashboardToken,
+  getDashboardToken,
+  setDashboardToken,
+} from "./api/authFetch";
+
 /**
  * Libre2 온라인 모니터링 대시보드 (프론트 MVP)
  * - 메인(대시보드) -> 채널별 주요 셀러 -> 판매처 세부
@@ -38,13 +45,77 @@ import {
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 const MEDICAL_DEVICE_BASE_URL = "https://2d.daewoong.co.kr/frame/index.do";
 
+function DashboardPasswordScreen({ apiBase, onSuccess }) {
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch(`${apiBase}/auth/dashboard/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: password.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(
+          typeof data.detail === "string"
+            ? data.detail
+            : "비밀번호가 올바르지 않습니다.",
+        );
+        return;
+      }
+      if (data.access_token) {
+        setDashboardToken(data.access_token);
+        onSuccess();
+      }
+    } catch {
+      setError("서버에 연결할 수 없습니다.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <form
+      onSubmit={submit}
+      className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 shadow-sm space-y-4"
+    >
+      <h1 className="text-lg font-semibold text-slate-900">
+        Libre2 Price Monitor
+      </h1>
+      <p className="text-sm text-slate-600">대시보드 비밀번호를 입력하세요.</p>
+      <input
+        type="password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900"
+        placeholder="비밀번호"
+        autoComplete="current-password"
+      />
+      {error ? <div className="text-sm text-red-600">{error}</div> : null}
+      <button
+        type="submit"
+        disabled={loading || !password.trim()}
+        className="w-full rounded-xl bg-slate-900 py-2 text-sm font-medium text-white disabled:opacity-50"
+      >
+        {loading ? "확인 중…" : "들어가기"}
+      </button>
+    </form>
+  );
+}
+
 async function fetchLatestProducts(channel) {
   try {
     const qs = channel ? `?channel=${encodeURIComponent(channel)}` : "";
-    let response = await fetch(`${API_BASE}/products/latest${qs}`);
+    let response = await authFetch(`${API_BASE}/products/latest${qs}`);
     if (response.status === 404) {
       // Backward compatibility for older backend deployments
-      response = await fetch(`${API_BASE}/products/today${qs}`);
+      response = await authFetch(`${API_BASE}/products/today${qs}`);
     }
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`);
@@ -59,7 +130,7 @@ async function fetchLatestProducts(channel) {
 
 async function fetchConfig() {
   try {
-    const response = await fetch(`${API_BASE}/products/config`);
+    const response = await authFetch(`${API_BASE}/products/config`);
     if (!response.ok) throw new Error(`API error: ${response.status}`);
     return await response.json();
   } catch (error) {
@@ -71,7 +142,7 @@ async function fetchConfig() {
 async function fetchTrackedMallsSummary(channel) {
   try {
     const qs = channel ? `?channel=${encodeURIComponent(channel)}` : "";
-    const response = await fetch(`${API_BASE}/products/tracked-malls/summary${qs}`);
+    const response = await authFetch(`${API_BASE}/products/tracked-malls/summary${qs}`);
     if (!response.ok) throw new Error(`API error: ${response.status}`);
     return await response.json();
   } catch (error) {
@@ -84,7 +155,7 @@ async function fetchTrackedMallsTrends(days = 7, channel) {
   try {
     const params = new URLSearchParams({ days: String(days) });
     if (channel) params.set("channel", channel);
-    const response = await fetch(
+    const response = await authFetch(
       `${API_BASE}/products/tracked-malls/trends?${params.toString()}`,
     );
     if (!response.ok) throw new Error(`API error: ${response.status}`);
@@ -97,7 +168,7 @@ async function fetchTrackedMallsTrends(days = 7, channel) {
 
 async function fetchMallsTop(limit = 10) {
   try {
-    const response = await fetch(
+    const response = await authFetch(
       `${API_BASE}/products/malls/top?limit=${limit}`,
     );
     if (!response.ok) throw new Error(`API error: ${response.status}`);
@@ -110,7 +181,7 @@ async function fetchMallsTop(limit = 10) {
 
 async function runCrawlNow() {
   try {
-    const response = await fetch(`${API_BASE}/products/crawl/run`, {
+    const response = await authFetch(`${API_BASE}/products/crawl/run`, {
       method: "POST",
     });
     if (!response.ok) throw new Error(`API error: ${response.status}`);
@@ -123,7 +194,7 @@ async function runCrawlNow() {
 
 async function fetchCrawlStatus() {
   try {
-    const response = await fetch(`${API_BASE}/products/crawl/status`);
+    const response = await authFetch(`${API_BASE}/products/crawl/status`);
     if (!response.ok) throw new Error(`API error: ${response.status}`);
     return await response.json();
   } catch (error) {
@@ -145,7 +216,7 @@ async function fetchMallTimeline(mallName, days = 30, channel) {
       days: String(days),
     });
     if (channel) params.set("channel", channel);
-    const response = await fetch(
+    const response = await authFetch(
       `${API_BASE}/products/mall/timeline?${params.toString()}`,
     );
     if (!response.ok) throw new Error(`API error: ${response.status}`);
@@ -158,7 +229,7 @@ async function fetchMallTimeline(mallName, days = 30, channel) {
 
 async function generateCardImageOnDemand(productId) {
   try {
-    const response = await fetch(
+    const response = await authFetch(
       `${API_BASE}/products/card/generate?product_id=${encodeURIComponent(productId)}`,
       { method: "POST" },
     );
@@ -181,7 +252,7 @@ async function generateCardImageOnDemand(productId) {
 
 async function confirmManualQuantity(productId, quantity) {
   try {
-    const response = await fetch(
+    const response = await authFetch(
       `${API_BASE}/products/manual-confirm?product_id=${encodeURIComponent(productId)}&quantity=${encodeURIComponent(quantity)}`,
       { method: "POST" },
     );
@@ -212,7 +283,7 @@ async function deleteProductsByIds(productIds = []) {
       ),
     );
     if (safeIds.length === 0) return { deleted: false, deleted_count: 0, message: "No ids" };
-    const response = await fetch(`${API_BASE}/products/delete`, {
+    const response = await authFetch(`${API_BASE}/products/delete`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ product_ids: safeIds }),
@@ -4652,7 +4723,6 @@ export default function App() {
     data: [],
   });
   const [mallsTop, setMallsTop] = useState({ count: 0, data: [] });
-  const [loading, setLoading] = useState(true);
   const [crawlActionLoading, setCrawlActionLoading] = useState(false);
   const [crawlStatus, setCrawlStatus] = useState({
     running: false,
@@ -4664,6 +4734,8 @@ export default function App() {
   const [medicalModalOpen, setMedicalModalOpen] = useState(false);
   const [medicalSerialInput, setMedicalSerialInput] = useState("");
   const wasCrawlRunningRef = useRef(false);
+  const [hasToken, setHasToken] = useState(() => Boolean(getDashboardToken()));
+  const [loading, setLoading] = useState(() => Boolean(getDashboardToken()));
 
   const handleOpenMedicalDeviceSite = () => {
     setMedicalModalOpen(true);
@@ -4694,6 +4766,10 @@ export default function App() {
   };
 
   const refreshDashboardData = useCallback(async ({ showLoader = false } = {}) => {
+    if (!getDashboardToken()) {
+      if (showLoader) setLoading(false);
+      return;
+    }
     if (showLoader) setLoading(true);
 
     // config 먼저 로드해서 기준가 설정
@@ -4715,12 +4791,24 @@ export default function App() {
     if (showLoader) setLoading(false);
   }, []);
 
-  // API 데이터 로드
   useEffect(() => {
-    refreshDashboardData({ showLoader: true });
-  }, [refreshDashboardData]);
+    const onExpired = () => setHasToken(false);
+    window.addEventListener("dashboard-auth-expired", onExpired);
+    return () => window.removeEventListener("dashboard-auth-expired", onExpired);
+  }, []);
 
   useEffect(() => {
+    if (!hasToken) setLoading(false);
+  }, [hasToken]);
+
+  // API 데이터 로드
+  useEffect(() => {
+    if (!hasToken) return;
+    refreshDashboardData({ showLoader: true });
+  }, [refreshDashboardData, hasToken]);
+
+  useEffect(() => {
+    if (!hasToken) return;
     let timer = null;
     const pollStatus = async () => {
       const status = await fetchCrawlStatus();
@@ -4736,10 +4824,10 @@ export default function App() {
     return () => {
       if (timer) clearInterval(timer);
     };
-  }, [refreshDashboardData]);
+  }, [refreshDashboardData, hasToken]);
 
   const handleRunCrawlNow = async () => {
-    if (crawlActionLoading || crawlStatus.running) return;
+    if (!getDashboardToken() || crawlActionLoading || crawlStatus.running) return;
     setCrawlActionLoading(true);
     const result = await runCrawlNow();
     if (result?.status === "started") {
@@ -4972,24 +5060,39 @@ export default function App() {
             </div>
           </button>
         </div>
-        <div className="hidden md:flex items-center gap-2">
-          <HeaderNavButton
-            onClick={handleOpenMedicalDeviceSite}
-          >
-            {"의료기기 링크\n(시리얼 입력)"}
-          </HeaderNavButton>
-          <HeaderNavButton
-            active={location.pathname === "/range-report"}
-            onClick={() => navigate("/range-report")}
-          >
-            {"Date Range\nReport"}
-          </HeaderNavButton>
-          <HeaderNavButton
-            active={location.pathname === "/raw-export"}
-            onClick={() => navigate("/raw-export")}
-          >
-            {"원본 DB\n엑셀"}
-          </HeaderNavButton>
+        <div className="flex items-center gap-2">
+          <div className="hidden md:flex items-center gap-2">
+            <HeaderNavButton
+              onClick={handleOpenMedicalDeviceSite}
+            >
+              {"의료기기 링크\n(시리얼 입력)"}
+            </HeaderNavButton>
+            <HeaderNavButton
+              active={location.pathname === "/range-report"}
+              onClick={() => navigate("/range-report")}
+            >
+              {"Date Range\nReport"}
+            </HeaderNavButton>
+            <HeaderNavButton
+              active={location.pathname === "/raw-export"}
+              onClick={() => navigate("/raw-export")}
+            >
+              {"원본 DB\n엑셀"}
+            </HeaderNavButton>
+          </div>
+          {hasToken ? (
+            <button
+              type="button"
+              onClick={() => {
+                clearDashboardToken();
+                setHasToken(false);
+                setLoading(false);
+              }}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              로그아웃
+            </button>
+          ) : null}
         </div>
       </div>
     </div>
@@ -5135,6 +5238,14 @@ export default function App() {
         </Routes>
       </main>
       {footer}
+      {!hasToken ? (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-100/95 px-4 backdrop-blur-sm">
+          <DashboardPasswordScreen
+            apiBase={API_BASE}
+            onSuccess={() => setHasToken(true)}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

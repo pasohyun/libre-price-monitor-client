@@ -1,16 +1,17 @@
 // src/Report.jsx
 import { useEffect, useMemo, useState } from "react";
+import { authFetch } from "./api/authFetch";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 async function fetchTrackedMallsSummary() {
-  const res = await fetch(`${API_BASE}/products/tracked-malls/summary`);
+  const res = await authFetch(`${API_BASE}/products/tracked-malls/summary`);
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
 }
 
 async function fetchMallsTop(limit = 10) {
-  const res = await fetch(`${API_BASE}/products/malls/top?limit=${limit}`);
+  const res = await authFetch(`${API_BASE}/products/malls/top?limit=${limit}`);
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
 }

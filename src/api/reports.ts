@@ -1,5 +1,6 @@
 // src/api/reports.ts
 import { API_BASE_URL } from "../config/api";
+import { authFetch } from "./authFetch";
 
 export type MonthlyReportParams = {
   month: string; // "YYYY-MM"
@@ -69,7 +70,7 @@ export async function getRangeReport(params: RangeReportParams) {
 
   const url = `${API_BASE_URL}/reports/range?${qs.toString()}`;
 
-  const res = await fetch(url, {
+  const res = await authFetch(url, {
     method: "GET",
     headers: { accept: "application/json" },
   });
