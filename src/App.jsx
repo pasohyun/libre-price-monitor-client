@@ -2437,6 +2437,9 @@ function MainDashboard({
   const [filterDate, setFilterDate] = useState("all");
   const [filterHour, setFilterHour] = useState("all");
   const [sortByTime, setSortByTime] = useState("none"); // "none" | "asc" | "desc"
+  const [sortByPrice, setSortByPrice] = useState("none"); // "none" | "asc" | "desc"
+  const [filterSeller, setFilterSeller] = useState("all"); // "all" | "channel\tsellerRaw"
+  const [searchText, setSearchText] = useState("");
   const allSeriesDefs = useMemo(
     () =>
       ["naver", "coupang"].flatMap((ch) =>
@@ -2509,12 +2512,12 @@ function MainDashboard({
     return [...hourSet].sort();
   }, [offers]);
 
-  const filteredOffers = useMemo(() => {
+  /** 채널·기준가·수량·날짜·시간까지 적용한 뒤의 목록 (판매처 드롭다운 옵션용) */
+  const offersForSellerPick = useMemo(() => {
     const thr = Number.isFinite(safeSettings.threshold)
       ? safeSettings.threshold
       : Infinity;
-
-    let result = offers
+    return offers
       .filter((o) => channelFilter === "all" || o.channel === channelFilter)
       .filter((o) => o.unitPrice <= thr)
       .filter((o) => filterPack === "all" || String(o.pack) === filterPack)
@@ -2534,9 +2537,57 @@ function MainDashboard({
         const hourStr = String(kst.getHours()).padStart(2, "0");
         return hourStr === filterHour;
       });
+  }, [offers, safeSettings, channelFilter, filterPack, filterDate, filterHour]);
 
-    if (sortByTime !== "none") {
-      result = [...result].sort((a, b) => {
+  const sellerPickOptions = useMemo(() => {
+    const map = new Map();
+    for (const o of offersForSellerPick) {
+      const raw = String(o.seller || "").trim();
+      if (!raw) continue;
+      const key = `${o.channel}\t${raw}`;
+      if (map.has(key)) continue;
+      map.set(key, {
+        key,
+        label: displaySellerName(o.channel, o.seller) || raw,
+        channel: o.channel,
+        seller: raw,
+      });
+    }
+    return [...map.values()].sort((a, b) =>
+      String(a.label).localeCompare(String(b.label), "ko"),
+    );
+  }, [offersForSellerPick]);
+
+  const filteredOffers = useMemo(() => {
+    let result = [...offersForSellerPick];
+
+    if (filterSeller !== "all") {
+      const tab = filterSeller.indexOf("\t");
+      if (tab > 0) {
+        const ch = filterSeller.slice(0, tab);
+        const sellerRaw = filterSeller.slice(tab + 1);
+        result = result.filter(
+          (o) => o.channel === ch && String(o.seller || "").trim() === sellerRaw,
+        );
+      }
+    }
+
+    const q = (searchText || "").trim().toLowerCase();
+    if (q) {
+      result = result.filter((o) => {
+        const disp = String(displaySellerName(o.channel, o.seller) || "").toLowerCase();
+        const raw = String(o.seller || "").toLowerCase();
+        const pn = String(o.productName || "").toLowerCase();
+        return disp.includes(q) || raw.includes(q) || pn.includes(q);
+      });
+    }
+
+    if (sortByPrice === "asc") {
+      result.sort((a, b) => (a.unitPrice || 0) - (b.unitPrice || 0));
+    } else if (sortByPrice === "desc") {
+      result.sort((a, b) => (b.unitPrice || 0) - (a.unitPrice || 0));
+    } else if (sortByTime !== "none") {
+      result.sort((a, b) => {
         const ta = String(a.capturedAt || "");
         const tb = String(b.capturedAt || "");
         return sortByTime === "asc"
@@ -2546,7 +2597,13 @@ function MainDashboard({
     }
 
     return result.map((o) => ({ ...o, __rowKey: o.id }));
-  }, [offers, safeSettings, channelFilter, filterPack, filterDate, filterHour, sortByTime]);
+  }, [
+    offersForSellerPick,
+    filterSeller,
+    searchText,
+    sortByPrice,
+    sortByTime,
+  ]);
 
   const totalOffersPages = Math.max(
     1,
@@ -2573,7 +2630,23 @@ function MainDashboard({
 
   useEffect(() => {
     setOffersPage(1);
-  }, [channelFilter, safeSettings.threshold, filterPack, filterDate, filterHour, sortByTime]);
+  }, [
+    channelFilter,
+    safeSettings.threshold,
+    filterPack,
+    filterDate,
+    filterHour,
+    sortByTime,
+    sortByPrice,
+    filterSeller,
+    searchText,
+  ]);
+
+  useEffect(() => {
+    if (filterSeller === "all") return;
+    const exists = sellerPickOptions.some((opt) => opt.key === filterSeller);
+    if (!exists) setFilterSeller("all");
+  }, [filterSeller, sellerPickOptions]);
 
   useEffect(() => {
     if (offersPage > totalOffersPages) {
@@ -3272,7 +3345,10 @@ function MainDashboard({
                 <button
                   key={key}
                   type="button"
-                  onClick={() => setSortByTime(key)}
+                  onClick={() => {
+                    setSortByTime(key);
+                    if (key !== "none") setSortByPrice("none");
+                  }}
                   className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
                     sortByTime === key
                       ? "border-slate-900 bg-slate-900 text-white"
@@ -3285,8 +3361,69 @@ function MainDashboard({
             </div>
           </div>
 
+          {/* 단가 정렬 */}
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-slate-600">단가 정렬</span>
+            <div className="flex flex-wrap gap-1">
+              {[
+                { key: "none", label: "기본" },
+                { key: "asc", label: "낮은순" },
+                { key: "desc", label: "높은순" },
+              ].map(({ key, label }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => {
+                    setSortByPrice(key);
+                    if (key !== "none") setSortByTime("none");
+                  }}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                    sortByPrice === key
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 판매처 + 검색 */}
+          <div className="flex flex-col gap-1 min-w-[160px]">
+            <span className="text-xs font-medium text-slate-600">판매처</span>
+            <select
+              value={filterSeller}
+              onChange={(e) => setFilterSeller(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400 max-w-[220px]"
+            >
+              <option value="all">전체</option>
+              {sellerPickOptions.map((opt) => (
+                <option key={opt.key} value={opt.key}>
+                  {channelLabel(opt.channel)} · {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1 flex-1 min-w-[200px] max-w-md">
+            <span className="text-xs font-medium text-slate-600">검색 (판매처·상품명)</span>
+            <input
+              type="search"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder="예: 랜식, 리브레…"
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
+            />
+          </div>
+
           {/* 필터 초기화 */}
-          {(filterPack !== "all" || filterDate !== "all" || filterHour !== "all" || sortByTime !== "none") && (
+          {(filterPack !== "all" ||
+            filterDate !== "all" ||
+            filterHour !== "all" ||
+            sortByTime !== "none" ||
+            sortByPrice !== "none" ||
+            filterSeller !== "all" ||
+            (searchText || "").trim() !== "") && (
             <button
               type="button"
               onClick={() => {
@@ -3294,6 +3431,9 @@ function MainDashboard({
                 setFilterDate("all");
                 setFilterHour("all");
                 setSortByTime("none");
+                setSortByPrice("none");
+                setFilterSeller("all");
+                setSearchText("");
               }}
               className="self-end rounded-lg border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-100"
             >
