@@ -227,6 +227,28 @@ async function fetchMallTimeline(mallName, days = 30, channel) {
   }
 }
 
+async function fetchMallPriceInsights(mallName, days = 30, channel) {
+  const params = new URLSearchParams({
+    mall_name: mallName,
+    days: String(days),
+  });
+  if (channel) params.set("channel", channel);
+  const response = await authFetch(
+    `${API_BASE}/products/mall/price-insights?${params.toString()}`,
+  );
+  if (!response.ok) {
+    let detail = `API error: ${response.status}`;
+    try {
+      const err = await response.json();
+      if (err?.detail) detail = String(err.detail);
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
+  }
+  return await response.json();
+}
+
 async function generateCardImageOnDemand(productId) {
   try {
     const response = await authFetch(
@@ -303,6 +325,105 @@ async function deleteProductsByIds(productIds = []) {
     console.error("Failed to delete products:", error);
     return { deleted: false, deleted_count: 0, message: String(error) };
   }
+}
+
+async function fetchGlobalMemos() {
+  try {
+    const response = await authFetch(`${API_BASE}/memos/global`);
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    console.error("Failed to fetch global memos:", error);
+    return [];
+  }
+}
+
+async function createGlobalMemo(body, summary) {
+  const response = await authFetch(`${API_BASE}/memos/global`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ body, summary: summary || null }),
+  });
+  if (!response.ok) {
+    let detail = `API error: ${response.status}`;
+    try {
+      const err = await response.json();
+      if (err?.detail) detail = String(err.detail);
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
+  }
+  return await response.json();
+}
+
+async function fetchVendorMemosAggregate(limit = 80) {
+  try {
+    const response = await authFetch(
+      `${API_BASE}/memos/vendors/aggregate?limit=${encodeURIComponent(String(limit))}&offset=0`,
+    );
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    console.error("Failed to fetch vendor memos aggregate:", error);
+    return { count: 0, items: [] };
+  }
+}
+
+async function fetchVendorMemosForSeller(channel, vendorLabel) {
+  try {
+    const params = new URLSearchParams({
+      channel: String(channel || ""),
+      vendor_label: String(vendorLabel || ""),
+    });
+    const response = await authFetch(`${API_BASE}/memos/vendor?${params.toString()}`);
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    console.error("Failed to fetch vendor memos:", error);
+    return [];
+  }
+}
+
+async function createVendorMemo(channel, vendorLabel, body, summary) {
+  const response = await authFetch(`${API_BASE}/memos/vendor`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      channel: String(channel || ""),
+      vendor_label: String(vendorLabel || ""),
+      body,
+      summary: summary || null,
+    }),
+  });
+  if (!response.ok) {
+    let detail = `API error: ${response.status}`;
+    try {
+      const err = await response.json();
+      if (err?.detail) detail = String(err.detail);
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
+  }
+  return await response.json();
+}
+
+async function deleteDashboardMemo(memoId) {
+  const response = await authFetch(`${API_BASE}/memos/${encodeURIComponent(String(memoId))}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    let detail = `API error: ${response.status}`;
+    try {
+      const err = await response.json();
+      if (err?.detail) detail = String(err.detail);
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
+  }
+  return await response.json();
 }
 
 // -----------------------------
@@ -1435,6 +1556,381 @@ function Card({ title, right, children, className = "" }) {
   );
 }
 
+function GlobalMemoBoard() {
+  const [expanded, setExpanded] = useState(true);
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [summary, setSummary] = useState("");
+  const [body, setBody] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const list = await fetchGlobalMemos();
+      setItems(Array.isArray(list) ? list : []);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleSave = async () => {
+    const b = (body || "").trim();
+    if (!b) {
+      window.alert("메모 내용을 입력해 주세요.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await createGlobalMemo(b, (summary || "").trim() || null);
+      setBody("");
+      setSummary("");
+      await load();
+    } catch (e) {
+      window.alert(String(e?.message || e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("이 메모를 삭제할까요?")) return;
+    try {
+      await deleteDashboardMemo(id);
+      await load();
+    } catch (e) {
+      window.alert(String(e?.message || e));
+    }
+  };
+
+  return (
+    <div className="border-b border-amber-200/80 bg-gradient-to-b from-amber-50 to-amber-50/40">
+      <div className="mx-auto max-w-[1600px] px-4 py-3">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <div className="font-semibold text-amber-950">전체 운영 메모 (온라인 계보)</div>
+            <div className="text-xs text-amber-900/75">
+              팀 공유 · 인수인계 · 운영 공지 (요약·본문·작성 시각 자동 기록)
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={load}
+              disabled={loading}
+              className="rounded-lg border border-amber-300/80 bg-white px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+            >
+              {loading ? "불러오는 중…" : "새로고침"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="rounded-lg border border-amber-300/80 bg-white px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100"
+            >
+              {expanded ? "접기" : "펼치기"}
+            </button>
+          </div>
+        </div>
+
+        {expanded ? (
+          <div className="mt-3 space-y-3">
+            <div className="rounded-xl border border-amber-200/90 bg-white/90 p-3 shadow-sm">
+              <div className="grid gap-2 md:grid-cols-12">
+                <label className="md:col-span-12 text-xs font-medium text-slate-600">
+                  요약 (선택)
+                  <input
+                    value={summary}
+                    onChange={(e) => setSummary(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-900"
+                    placeholder="한 줄 요약"
+                    maxLength={500}
+                  />
+                </label>
+                <label className="md:col-span-12 text-xs font-medium text-slate-600">
+                  메모 내용
+                  <textarea
+                    value={body}
+                    onChange={(e) => setBody(e.target.value)}
+                    rows={3}
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-900"
+                    placeholder="운영 공지, 협의 사항, 주의할 업체/채널 등"
+                  />
+                </label>
+                <div className="md:col-span-12 flex justify-end">
+                  <PrimaryButton onClick={handleSave} disabled={saving}>
+                    {saving ? "저장 중…" : "공용 메모 등록"}
+                  </PrimaryButton>
+                </div>
+              </div>
+            </div>
+
+            <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+              {items.length === 0 && !loading ? (
+                <div className="text-sm text-amber-900/70">등록된 공용 메모가 없습니다.</div>
+              ) : null}
+              {items.map((m) => (
+                <div
+                  key={m.id}
+                  className="rounded-lg border border-amber-100 bg-white/95 px-3 py-2 text-sm text-slate-800 shadow-sm"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      {m.summary ? (
+                        <div className="font-semibold text-slate-900">{m.summary}</div>
+                      ) : null}
+                      <div className="mt-1 whitespace-pre-wrap break-words text-slate-700">
+                        {m.body}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        작성: {formatDateTimeKST(m.created_at)}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(m.id)}
+                      className="shrink-0 rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-100"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function VendorMemosAggregateCard({ onOpenSeller, sellerOptions = [] }) {
+  const [data, setData] = useState({ count: 0, items: [] });
+  const [loading, setLoading] = useState(true);
+  const [quickSeller, setQuickSeller] = useState("");
+  const [quickSellerQuery, setQuickSellerQuery] = useState("");
+  const [quickSummary, setQuickSummary] = useState("");
+  const [quickBody, setQuickBody] = useState("");
+  const [quickSaving, setQuickSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const j = await fetchVendorMemosAggregate(80);
+      setData({
+        count: typeof j?.count === "number" ? j.count : 0,
+        items: Array.isArray(j?.items) ? j.items : [],
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const goSeller = (channel, vendorRaw) => {
+    if (typeof onOpenSeller === "function") onOpenSeller(channel, vendorRaw);
+  };
+
+  const preview = (text, n = 96) => {
+    const s = String(text || "").replace(/\s+/g, " ").trim();
+    if (s.length <= n) return s;
+    return `${s.slice(0, n)}…`;
+  };
+
+  const filteredSellerOptions = useMemo(() => {
+    const q = String(quickSellerQuery || "").trim().toLowerCase();
+    if (!q) return sellerOptions;
+    return sellerOptions.filter((opt) => {
+      const label = String(opt.label || "").toLowerCase();
+      const channel = String(channelLabel(opt.channel) || "").toLowerCase();
+      const raw = String(opt.seller || "").toLowerCase();
+      return label.includes(q) || channel.includes(q) || raw.includes(q);
+    });
+  }, [sellerOptions, quickSellerQuery]);
+
+  const handleQuickSave = async () => {
+    const sellerKey = String(quickSeller || "");
+    const body = String(quickBody || "").trim();
+    if (!sellerKey) {
+      window.alert("판매처를 선택해 주세요.");
+      return;
+    }
+    if (!body) {
+      window.alert("메모 내용을 입력해 주세요.");
+      return;
+    }
+    const sep = sellerKey.indexOf("\t");
+    if (sep <= 0) {
+      window.alert("판매처 값이 올바르지 않습니다.");
+      return;
+    }
+    const channel = sellerKey.slice(0, sep);
+    const vendor = sellerKey.slice(sep + 1);
+    setQuickSaving(true);
+    try {
+      await createVendorMemo(channel, vendor, body, String(quickSummary || "").trim() || null);
+      setQuickBody("");
+      setQuickSummary("");
+      await load();
+      if (typeof onOpenSeller === "function") onOpenSeller(channel, vendor);
+    } catch (e) {
+      window.alert(String(e?.message || e));
+    } finally {
+      setQuickSaving(false);
+    }
+  };
+
+  return (
+    <Card
+      title="업체 메모 취합 · 조회"
+      right={
+        <button
+          type="button"
+          onClick={load}
+          disabled={loading}
+          className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+        >
+          {loading ? "불러오는 중…" : "새로고침"}
+        </button>
+      }
+    >
+      <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div className="mb-2 text-xs font-semibold text-slate-600">빠른 등록</div>
+        <div className="grid gap-2 md:grid-cols-12">
+          <label className="md:col-span-4 text-xs font-medium text-slate-600">
+            판매처 검색
+            <input
+              value={quickSellerQuery}
+              onChange={(e) => setQuickSellerQuery(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-800"
+              placeholder="판매처/채널 키워드 검색"
+            />
+          </label>
+          <label className="md:col-span-4 text-xs font-medium text-slate-600">
+            판매처 선택
+            <select
+              value={quickSeller}
+              onChange={(e) => setQuickSeller(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-800"
+            >
+              <option value="">선택하세요</option>
+              {filteredSellerOptions.map((opt) => (
+                <option key={opt.key} value={opt.key}>
+                  {opt.label} ({channelLabel(opt.channel)})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="md:col-span-4 text-xs font-medium text-slate-600">
+            요약 (선택)
+            <input
+              value={quickSummary}
+              onChange={(e) => setQuickSummary(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-800"
+              placeholder="한 줄 요약"
+              maxLength={500}
+            />
+          </label>
+          <label className="md:col-span-10 text-xs font-medium text-slate-600">
+            메모 내용
+            <textarea
+              value={quickBody}
+              onChange={(e) => setQuickBody(e.target.value)}
+              rows={2}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-800"
+              placeholder="해당 업체 관련 메모를 입력하세요."
+            />
+          </label>
+          <div className="md:col-span-2 flex items-end justify-end">
+            <PrimaryButton onClick={handleQuickSave} disabled={quickSaving}>
+              {quickSaving ? "등록 중…" : "빠른 등록"}
+            </PrimaryButton>
+          </div>
+        </div>
+      </div>
+      <div className="mb-2 text-xs text-slate-500">
+        전체 <span className="font-semibold text-slate-700">{data.count}</span>건 · 최근{" "}
+        {data.items.length}건 표시
+      </div>
+      <div className="overflow-x-auto rounded-xl border border-slate-200">
+        <table className="min-w-full text-sm">
+          <thead className="bg-slate-50 text-slate-600">
+            <tr>
+              <th className="px-3 py-2 text-left font-medium">채널</th>
+              <th className="px-3 py-2 text-left font-medium">판매처</th>
+              <th className="px-3 py-2 text-left font-medium">요약</th>
+              <th className="px-3 py-2 text-left font-medium">작성일</th>
+              <th className="px-3 py-2 text-left font-medium">본문 미리보기</th>
+              <th className="px-3 py-2 text-left font-medium">작업</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && data.items.length === 0 ? (
+              <tr>
+                <td className="px-3 py-4 text-slate-500" colSpan={6}>
+                  불러오는 중…
+                </td>
+              </tr>
+            ) : null}
+            {!loading && data.items.length === 0 ? (
+              <tr>
+                <td className="px-3 py-4 text-slate-500" colSpan={6}>
+                  등록된 업체 메모가 없습니다.
+                </td>
+              </tr>
+            ) : null}
+            {data.items.map((m) => (
+              <tr key={m.id} className="border-t border-slate-100 align-top">
+                <td className="px-3 py-2 text-slate-800">{channelLabel(m.channel)}</td>
+                <td className="px-3 py-2 font-medium text-slate-900">
+                  {displaySellerName(m.channel, m.vendor_label)}
+                </td>
+                <td className="px-3 py-2 text-slate-700">{m.summary || "—"}</td>
+                <td className="px-3 py-2 whitespace-nowrap text-slate-600">
+                  {formatDateTimeKST(m.created_at)}
+                </td>
+                <td className="px-3 py-2 text-slate-600">{preview(m.body)}</td>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  <div className="flex flex-wrap gap-1">
+                    <button
+                      type="button"
+                      onClick={() => goSeller(m.channel, m.vendor_label)}
+                      className="rounded border border-slate-200 bg-white px-2 py-0.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      세부
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!window.confirm("이 메모를 삭제할까요?")) return;
+                        try {
+                          await deleteDashboardMemo(m.id);
+                          await load();
+                        } catch (e) {
+                          window.alert(String(e?.message || e));
+                        }
+                      }}
+                      className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-100"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
 function Stat({ label, value, sub, highlight }) {
   return (
     <div
@@ -2483,6 +2979,7 @@ function MainDashboard({
   crawlActionLoading,
   onRunCrawl,
   onGoChannel,
+  onOpenSeller,
   onGenerateImage,
   onManualConfirm,
   onDeleteProducts,
@@ -2628,6 +3125,29 @@ function MainDashboard({
       String(a.label).localeCompare(String(b.label), "ko"),
     );
   }, [offersForSellerPick]);
+
+  const allSellerOptions = useMemo(() => {
+    const map = new Map();
+    for (const o of offers) {
+      const ch = String(o.channel || "").trim();
+      const raw = String(o.seller || "").trim();
+      if (!ch || !raw) continue;
+      const key = `${ch}\t${raw}`;
+      if (map.has(key)) continue;
+      map.set(key, {
+        key,
+        label: displaySellerName(ch, raw) || raw,
+        channel: ch,
+        seller: raw,
+      });
+    }
+    return [...map.values()].sort((a, b) =>
+      `${String(a.label)}${String(a.channel)}`.localeCompare(
+        `${String(b.label)}${String(b.channel)}`,
+        "ko",
+      ),
+    );
+  }, [offers]);
 
   const filteredOffers = useMemo(() => {
     let result = [...offersForSellerPick];
@@ -3070,6 +3590,10 @@ function MainDashboard({
           setPreviewHtmlCard(null);
           setHtmlGenerating(false);
         }}
+      />
+      <VendorMemosAggregateCard
+        onOpenSeller={onOpenSeller}
+        sellerOptions={allSellerOptions}
       />
       <div className="grid grid-cols-12 gap-4">
         <div className="col-span-12 lg:col-span-4">
@@ -4129,6 +4653,14 @@ function SellerDetail({
   const [filterPack, setFilterPack] = useState("all");
   const [selectedProductIds, setSelectedProductIds] = useState(() => new Set());
   const [deletingRows, setDeletingRows] = useState(false);
+  const [vendorMemos, setVendorMemos] = useState([]);
+  const [vendorMemosLoading, setVendorMemosLoading] = useState(false);
+  const [vmSummary, setVmSummary] = useState("");
+  const [vmBody, setVmBody] = useState("");
+  const [vmSaving, setVmSaving] = useState(false);
+  const [priceInsights, setPriceInsights] = useState(null);
+  const [priceInsightsLoading, setPriceInsightsLoading] = useState(true);
+  const [priceInsightsError, setPriceInsightsError] = useState(null);
 
   // API에서 셀러 타임라인 데이터 로드
   useEffect(() => {
@@ -4146,6 +4678,47 @@ function SellerDetail({
     }
     loadTimeline();
   }, [channelKey, sellerName]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadVm() {
+      setVendorMemosLoading(true);
+      try {
+        const list = await fetchVendorMemosForSeller(channelKey, sellerName);
+        if (!cancelled) setVendorMemos(Array.isArray(list) ? list : []);
+      } finally {
+        if (!cancelled) setVendorMemosLoading(false);
+      }
+    }
+    loadVm();
+    return () => {
+      cancelled = true;
+    };
+  }, [channelKey, sellerName]);
+
+  const reloadPriceInsights = useCallback(
+    async ({ silent } = {}) => {
+      if (!silent) {
+        setPriceInsightsLoading(true);
+        setPriceInsightsError(null);
+      }
+      try {
+        const data = await fetchMallPriceInsights(sellerName, 30, channelKey);
+        setPriceInsights(data);
+        setPriceInsightsError(null);
+      } catch (e) {
+        setPriceInsights(null);
+        setPriceInsightsError(String(e?.message || e));
+      } finally {
+        if (!silent) setPriceInsightsLoading(false);
+      }
+    },
+    [sellerName, channelKey],
+  );
+
+  useEffect(() => {
+    reloadPriceInsights({ silent: false });
+  }, [reloadPriceInsights]);
 
   const timeline = timelineData;
   const latestSellerUrl = useMemo(() => {
@@ -4439,6 +5012,7 @@ function SellerDetail({
           } else {
             const refreshed = await fetchMallTimeline(sellerName, 30, channelKey);
             if (refreshed?.data) setTimelineData(refreshed.data);
+            void reloadPriceInsights({ silent: true });
             setManualModalOpen(false);
             setManualTarget(null);
             setManualQtyInput("");
@@ -4549,6 +5123,258 @@ function SellerDetail({
         </div>
       </div>
 
+      <Card
+        title="가격 분석 (통계)"
+        right={
+          <div className="flex items-center gap-2">
+            {priceInsightsLoading ? (
+              <span className="text-xs text-slate-500">분석 중…</span>
+            ) : null}
+            <button
+              type="button"
+              disabled={priceInsightsLoading}
+              onClick={() => reloadPriceInsights({ silent: false })}
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            >
+              새로고침
+            </button>
+          </div>
+        }
+      >
+        {priceInsightsError ? (
+          <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-800">
+            분석을 불러오지 못했습니다. {priceInsightsError}
+          </div>
+        ) : null}
+        {priceInsightsLoading && !priceInsights && !priceInsightsError ? (
+          <p className="text-sm text-slate-500">분석 결과를 불러오는 중입니다…</p>
+        ) : null}
+        {!priceInsightsError && priceInsights ? (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              최근 <span className="font-semibold text-slate-900">{priceInsights.days}일</span>
+              {" · "}
+              스냅샷 시계열{" "}
+              <span className="font-semibold text-slate-900">
+                {priceInsights.observation_count}
+              </span>
+              개 (채널 필터와 타임라인 API와 동일)
+            </p>
+            {priceInsights.algorithm?.snapshots_per_day_assumed != null ? (
+              <p className="text-xs text-slate-500">
+                운영 스케줄 가정: 하루{" "}
+                <span className="font-medium text-slate-700">
+                  {priceInsights.algorithm.snapshots_per_day_assumed}회
+                </span>{" "}
+                스냅샷 · 이상치 베이스라인 롤링 약{" "}
+                <span className="font-medium text-slate-700">
+                  {priceInsights.algorithm.rolling_median_days}일
+                </span>{" "}
+                ({priceInsights.algorithm.rolling_median_snapshots}개 시점)
+              </p>
+            ) : null}
+            {priceInsights.observation_count === 0 ? (
+              <p className="text-sm text-slate-500">
+                이 기간·채널에서 분석할 스냅샷 요약 데이터가 없습니다.
+              </p>
+            ) : null}
+            {priceInsights.forecast ? (
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4">
+                <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
+                  단기 추세 (다음 1스텝 외삽)
+                </div>
+                <div className="mt-2 flex flex-wrap items-baseline gap-2">
+                  <span className="text-2xl font-bold text-slate-900">
+                    {formatKRW(Math.round(priceInsights.forecast.predicted_min_price))}
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    참고 구간 {formatKRW(Math.round(priceInsights.forecast.pred_low))} ~{" "}
+                    {formatKRW(Math.round(priceInsights.forecast.pred_high))}
+                  </span>
+                </div>
+                <div className="mt-1 text-xs text-slate-500">
+                  {priceInsights.forecast.method ===
+                  "statsmodels_exponential_smoothing_holt_additive"
+                    ? `최근 ${priceInsights.forecast.window}개 스냅샷 · Holt 가법 지수평활(추세 가산)`
+                    : `최근 ${priceInsights.forecast.window}개 스냅샷 · 선형 추세 OLS(폴백)`}
+                  {" · RMSE "}
+                  {priceInsights.forecast.rmse != null
+                    ? Math.round(priceInsights.forecast.rmse).toLocaleString("ko-KR")
+                    : "-"}
+                </div>
+              </div>
+            ) : priceInsights.observation_count > 0 ? (
+              <p className="text-sm text-slate-500">
+                관측이 적어(5개 미만) 단기 추세 추정은 생략되었습니다.
+              </p>
+            ) : null}
+            {priceInsights.anomalies?.length > 0 ? (
+              <div>
+                <div className="mb-2 text-sm font-semibold text-slate-800">
+                  통계적 급변 스냅샷 ({priceInsights.anomalies.length}건)
+                </div>
+                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-600">
+                      <tr>
+                        <th className="px-3 py-2 font-medium">시각</th>
+                        <th className="px-3 py-2 font-medium">유형</th>
+                        <th className="px-3 py-2 text-right font-medium">최저 단가</th>
+                        <th className="px-3 py-2 text-right font-medium">베이스라인</th>
+                        <th className="px-3 py-2 text-right font-medium">modified z</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {priceInsights.anomalies.map((a, idx) => (
+                        <tr key={`${a.ts}-${idx}`} className="bg-white">
+                          <td className="whitespace-nowrap px-3 py-2 text-slate-800">
+                            {formatDateTimeKST(a.ts)}
+                          </td>
+                          <td className="px-3 py-2">
+                            {a.kind === "sharp_drop" ? (
+                              <Badge tone="danger">급락</Badge>
+                            ) : a.kind === "sharp_rise" ? (
+                              <Badge tone="warning">급등</Badge>
+                            ) : (
+                              <span className="text-slate-500">{a.kind || "-"}</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-right font-medium tabular-nums">
+                            {formatKRW(a.min_price)}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums text-slate-600">
+                            {a.baseline != null ? formatKRW(Math.round(a.baseline)) : "—"}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums text-slate-600">
+                            {a.modified_z != null ? Number(a.modified_z).toFixed(2) : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : priceInsights.observation_count > 0 ? (
+              <p className="text-sm text-slate-600">
+                급락·급등으로 표시된 스냅샷은 없습니다. (잔차 기반 modified z-score가 임계값
+                미만)
+              </p>
+            ) : null}
+            {priceInsights.algorithm ? (
+              <p className="text-xs leading-relaxed text-slate-400">
+                알고리즘: 이상치 {priceInsights.algorithm.anomaly ?? "-"} · 예측{" "}
+                {priceInsights.algorithm.forecast ?? "-"}
+                {priceInsights.algorithm.reference
+                  ? ` · ${priceInsights.algorithm.reference}`
+                  : ""}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+      </Card>
+
+      <Card
+        title={`판매처 메모 · ${displaySellerName(channelKey, sellerName)}`}
+        right={
+          vendorMemosLoading ? (
+            <span className="text-xs text-slate-500">불러오는 중…</span>
+          ) : null
+        }
+      >
+        <div className="grid gap-3 md:grid-cols-12">
+          <label className="md:col-span-12 text-xs font-medium text-slate-600">
+            요약 (선택)
+            <input
+              value={vmSummary}
+              onChange={(e) => setVmSummary(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-900"
+              placeholder="한 줄 요약"
+              maxLength={500}
+            />
+          </label>
+          <label className="md:col-span-12 text-xs font-medium text-slate-600">
+            메모 내용
+            <textarea
+              value={vmBody}
+              onChange={(e) => setVmBody(e.target.value)}
+              rows={3}
+              className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-900"
+              placeholder="특이사항, 합의, 연락 이력, 예외 규칙 등"
+            />
+          </label>
+          <div className="md:col-span-12 flex justify-end">
+            <PrimaryButton
+              disabled={vmSaving}
+              onClick={async () => {
+                const b = (vmBody || "").trim();
+                if (!b) {
+                  window.alert("메모 내용을 입력해 주세요.");
+                  return;
+                }
+                setVmSaving(true);
+                try {
+                  await createVendorMemo(
+                    channelKey,
+                    sellerName,
+                    b,
+                    (vmSummary || "").trim() || null,
+                  );
+                  setVmBody("");
+                  setVmSummary("");
+                  const list = await fetchVendorMemosForSeller(channelKey, sellerName);
+                  setVendorMemos(Array.isArray(list) ? list : []);
+                } catch (e) {
+                  window.alert(String(e?.message || e));
+                } finally {
+                  setVmSaving(false);
+                }
+              }}
+            >
+              {vmSaving ? "저장 중…" : "이 판매처에 메모 등록"}
+            </PrimaryButton>
+          </div>
+        </div>
+        <div className="mt-4 max-h-56 space-y-2 overflow-y-auto border-t border-slate-100 pt-3">
+          {vendorMemos.length === 0 && !vendorMemosLoading ? (
+            <div className="text-sm text-slate-500">등록된 메모가 없습니다.</div>
+          ) : null}
+          {vendorMemos.map((m) => (
+            <div
+              key={m.id}
+              className="rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2 text-sm text-slate-800"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  {m.summary ? (
+                    <div className="font-semibold text-slate-900">{m.summary}</div>
+                  ) : null}
+                  <div className="mt-1 whitespace-pre-wrap break-words">{m.body}</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    작성: {formatDateTimeKST(m.created_at)}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!window.confirm("이 메모를 삭제할까요?")) return;
+                    try {
+                      await deleteDashboardMemo(m.id);
+                      const list = await fetchVendorMemosForSeller(channelKey, sellerName);
+                      setVendorMemos(Array.isArray(list) ? list : []);
+                    } catch (e) {
+                      window.alert(String(e?.message || e));
+                    }
+                  }}
+                  className="shrink-0 rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-100"
+                >
+                  삭제
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
       {!timelineLoading && rows.length === 0 && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <div>현재 조건에서 연결된 데이터가 없어 비어 보입니다.</div>
@@ -4592,6 +5418,7 @@ function SellerDetail({
                 setSelectedProductIds(new Set());
                 const refreshed = await fetchMallTimeline(sellerName, 30, channelKey);
                 if (refreshed?.data) setTimelineData(refreshed.data);
+                void reloadPriceInsights({ silent: true });
                 setDeletingRows(false);
               }}
             >
@@ -5121,6 +5948,7 @@ export default function App() {
         onSubmit={handleSubmitMedicalModal}
       />
       {header}
+      {hasToken ? <GlobalMemoBoard /> : null}
       <main className="mx-auto max-w-[1600px] px-4 py-6">
         <Routes>
           <Route
@@ -5137,6 +5965,9 @@ export default function App() {
                     onRunCrawl={handleRunCrawlNow}
                     onGoChannel={(channelKey) =>
                       setRoute({ page: "channel", channelKey, sellerName: "" })
+                    }
+                    onOpenSeller={(channelKey, sellerName) =>
+                      setRoute({ page: "seller", channelKey, sellerName })
                     }
                     onGenerateImage={handleGenerateImageOnDemand}
                     onManualConfirm={handleManualConfirmQuantity}
