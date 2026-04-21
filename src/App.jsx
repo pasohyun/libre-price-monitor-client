@@ -236,7 +236,7 @@ async function fetchAlertConfig() {
     console.error("Failed to fetch alert config:", error);
     return {
       enabled: false,
-      recipient_email: "",
+      recipient_emails: [],
       threshold_price: 85000,
       send_time_kst: "09:00",
     };
@@ -5570,7 +5570,7 @@ function AlertSettingsPage() {
   const [error, setError] = useState("");
 
   const [enabled, setEnabled] = useState(false);
-  const [recipientEmail, setRecipientEmail] = useState("");
+  const [recipientEmails, setRecipientEmails] = useState([""]);
   const [thresholdPrice, setThresholdPrice] = useState(85000);
   const [sendTimeKst, setSendTimeKst] = useState("09:00");
 
@@ -5581,7 +5581,12 @@ function AlertSettingsPage() {
     try {
       const conf = await fetchAlertConfig();
       setEnabled(Boolean(conf.enabled));
-      setRecipientEmail(conf.recipient_email || "");
+      const emails = Array.isArray(conf.recipient_emails)
+        ? conf.recipient_emails
+        : conf.recipient_email
+          ? [conf.recipient_email]
+          : [];
+      setRecipientEmails(emails.length ? emails : [""]);
       setThresholdPrice(Number(conf.threshold_price || 85000));
       setSendTimeKst(conf.send_time_kst || "09:00");
     } catch (e) {
@@ -5598,15 +5603,22 @@ function AlertSettingsPage() {
   const onSave = async () => {
     setError("");
     setMessage("");
-    if (!recipientEmail.trim()) {
-      setError("수신 이메일을 입력해주세요.");
+    const cleanedEmails = recipientEmails
+      .map((e) => String(e || "").trim().toLowerCase())
+      .filter(Boolean);
+    if (cleanedEmails.length === 0) {
+      setError("수신 이메일을 최소 1개 입력해주세요.");
+      return;
+    }
+    if (cleanedEmails.length > 5) {
+      setError("수신 이메일은 최대 5개까지 설정할 수 있습니다.");
       return;
     }
     setSaving(true);
     try {
       await saveAlertConfig({
         enabled,
-        recipient_email: recipientEmail.trim(),
+        recipient_emails: cleanedEmails,
         threshold_price: Number(thresholdPrice || 0),
       });
       setMessage("알람 설정 저장 완료");
@@ -5658,15 +5670,48 @@ function AlertSettingsPage() {
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <div className="text-sm text-slate-600">수신 이메일</div>
-              <input
-                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                type="email"
-                value={recipientEmail}
-                onChange={(e) => setRecipientEmail(e.target.value)}
-                placeholder="you@example.com"
-                disabled={loading}
-              />
+              <div className="text-sm text-slate-600">수신 이메일 (최대 5명)</div>
+              <div className="mt-1 space-y-2">
+                {recipientEmails.map((email, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <input
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                      type="email"
+                      value={email}
+                      onChange={(e) => {
+                        const next = [...recipientEmails];
+                        next[idx] = e.target.value;
+                        setRecipientEmails(next);
+                      }}
+                      placeholder={idx === 0 ? "2240052@daewoong.co.kr" : "libre2@daewoong.co.kr"}
+                      disabled={loading}
+                    />
+                    {recipientEmails.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = recipientEmails.filter((_, i) => i !== idx);
+                          setRecipientEmails(next.length ? next : [""]);
+                        }}
+                        className="rounded-lg border border-red-200 bg-red-50 px-2 py-2 text-xs text-red-700"
+                        disabled={loading}
+                      >
+                        삭제
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {recipientEmails.length < 5 && (
+                  <button
+                    type="button"
+                    onClick={() => setRecipientEmails([...recipientEmails, ""])}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600"
+                    disabled={loading}
+                  >
+                    + 이메일 추가
+                  </button>
+                )}
+              </div>
             </div>
             <div>
               <div className="text-sm text-slate-600">기준가(원)</div>
