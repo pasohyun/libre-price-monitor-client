@@ -4713,6 +4713,7 @@ function SellerDetail({
   const [priceInsights, setPriceInsights] = useState(null);
   const [priceInsightsLoading, setPriceInsightsLoading] = useState(true);
   const [priceInsightsError, setPriceInsightsError] = useState(null);
+  const [anomalyPage, setAnomalyPage] = useState(1);
 
   // API에서 셀러 타임라인 데이터 로드
   useEffect(() => {
@@ -4795,6 +4796,28 @@ function SellerDetail({
     const sum = timeline.reduce((acc, t) => acc + (t.unitPrice ?? 0), 0);
     return Math.round(sum / timeline.length);
   }, [timeline]);
+
+  const ANOMALIES_PER_PAGE = 5;
+  const sortedAnomalies = useMemo(() => {
+    const list = Array.isArray(priceInsights?.anomalies) ? [...priceInsights.anomalies] : [];
+    return list.sort((a, b) => {
+      const ta = parseDateLike(a?.ts)?.getTime() ?? 0;
+      const tb = parseDateLike(b?.ts)?.getTime() ?? 0;
+      return tb - ta;
+    });
+  }, [priceInsights]);
+  const anomalyTotalPages = Math.max(
+    1,
+    Math.ceil(sortedAnomalies.length / ANOMALIES_PER_PAGE),
+  );
+  const pagedAnomalies = useMemo(() => {
+    const start = (anomalyPage - 1) * ANOMALIES_PER_PAGE;
+    return sortedAnomalies.slice(start, start + ANOMALIES_PER_PAGE);
+  }, [sortedAnomalies, anomalyPage]);
+
+  useEffect(() => {
+    setAnomalyPage(1);
+  }, [sortedAnomalies.length]);
 
   // 날짜 목록 (필터 드롭다운용)
   const availableDates = useMemo(() => {
@@ -5212,19 +5235,6 @@ function SellerDetail({
               </span>
               개 (채널 필터와 타임라인 API와 동일)
             </p>
-            {priceInsights.algorithm?.snapshots_per_day_assumed != null ? (
-              <p className="text-xs text-slate-500">
-                운영 스케줄 가정: 하루{" "}
-                <span className="font-medium text-slate-700">
-                  {priceInsights.algorithm.snapshots_per_day_assumed}회
-                </span>{" "}
-                스냅샷 · 이상치 베이스라인 롤링 약{" "}
-                <span className="font-medium text-slate-700">
-                  {priceInsights.algorithm.rolling_median_days}일
-                </span>{" "}
-                ({priceInsights.algorithm.rolling_median_snapshots}개 시점)
-              </p>
-            ) : null}
             {priceInsights.observation_count === 0 ? (
               <p className="text-sm text-slate-500">
                 이 기간·채널에서 분석할 스냅샷 요약 데이터가 없습니다.
@@ -5240,19 +5250,32 @@ function SellerDetail({
                     {formatKRW(Math.round(priceInsights.forecast.predicted_min_price))}
                   </span>
                   <span className="text-xs text-slate-500">
-                    참고 구간 {formatKRW(Math.round(priceInsights.forecast.pred_low))} ~{" "}
+                    예상 범위 {formatKRW(Math.round(priceInsights.forecast.pred_low))} ~{" "}
                     {formatKRW(Math.round(priceInsights.forecast.pred_high))}
                   </span>
                 </div>
-                <div className="mt-1 text-xs text-slate-500">
-                  {priceInsights.forecast.method ===
-                  "statsmodels_exponential_smoothing_holt_additive"
-                    ? `최근 ${priceInsights.forecast.window}개 스냅샷 · Holt 가법 지수평활(추세 가산)`
-                    : `최근 ${priceInsights.forecast.window}개 스냅샷 · 선형 추세 OLS(폴백)`}
-                  {" · RMSE "}
-                  {priceInsights.forecast.rmse != null
-                    ? Math.round(priceInsights.forecast.rmse).toLocaleString("ko-KR")
-                    : "-"}
+                <div className="mt-2 space-y-1 text-xs text-slate-600">
+                  <div>
+                    기준가 대비{" "}
+                    <span className="font-medium text-slate-800">
+                      {formatKRW(
+                        Math.round(priceInsights.forecast.predicted_min_price) -
+                          (Number(settings.threshold) || 0),
+                      )}
+                    </span>
+                  </div>
+                  <div>
+                    변동 예상 폭{" "}
+                    <span className="font-medium text-slate-800">
+                      {formatKRW(
+                        Math.max(
+                          0,
+                          Math.round(priceInsights.forecast.pred_high) -
+                            Math.round(priceInsights.forecast.pred_low),
+                        ),
+                      )}
+                    </span>
+                  </div>
                 </div>
               </div>
             ) : priceInsights.observation_count > 0 ? (
@@ -5263,21 +5286,20 @@ function SellerDetail({
             {priceInsights.anomalies?.length > 0 ? (
               <div>
                 <div className="mb-2 text-sm font-semibold text-slate-800">
-                  통계적 급변 스냅샷 ({priceInsights.anomalies.length}건)
+                  가격 급변 스냅샷 ({sortedAnomalies.length}건)
                 </div>
                 <div className="overflow-x-auto rounded-lg border border-slate-200">
                   <table className="min-w-full text-left text-sm">
                     <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-600">
                       <tr>
                         <th className="px-3 py-2 font-medium">시각</th>
-                        <th className="px-3 py-2 font-medium">유형</th>
+                        <th className="px-3 py-2 font-medium">상태</th>
                         <th className="px-3 py-2 text-right font-medium">최저 단가</th>
-                        <th className="px-3 py-2 text-right font-medium">베이스라인</th>
-                        <th className="px-3 py-2 text-right font-medium">modified z</th>
+                        <th className="px-3 py-2 text-right font-medium">최근 기준 대비</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {priceInsights.anomalies.map((a, idx) => (
+                      {pagedAnomalies.map((a, idx) => (
                         <tr key={`${a.ts}-${idx}`} className="bg-white">
                           <td className="whitespace-nowrap px-3 py-2 text-slate-800">
                             {formatDateTimeKST(a.ts)}
@@ -5295,30 +5317,44 @@ function SellerDetail({
                             {formatKRW(a.min_price)}
                           </td>
                           <td className="px-3 py-2 text-right tabular-nums text-slate-600">
-                            {a.baseline != null ? formatKRW(Math.round(a.baseline)) : "—"}
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums text-slate-600">
-                            {a.modified_z != null ? Number(a.modified_z).toFixed(2) : "—"}
+                            {a.baseline != null
+                              ? formatKRW(Math.round(a.min_price - a.baseline))
+                              : "—"}
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
+                <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                  <span>
+                    페이지 {anomalyPage} / {anomalyTotalPages}
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={anomalyPage <= 1}
+                      onClick={() => setAnomalyPage((p) => Math.max(1, p - 1))}
+                      className="rounded border border-slate-200 px-2 py-1 disabled:opacity-40"
+                    >
+                      이전
+                    </button>
+                    <button
+                      type="button"
+                      disabled={anomalyPage >= anomalyTotalPages}
+                      onClick={() =>
+                        setAnomalyPage((p) => Math.min(anomalyTotalPages, p + 1))
+                      }
+                      className="rounded border border-slate-200 px-2 py-1 disabled:opacity-40"
+                    >
+                      다음
+                    </button>
+                  </div>
+                </div>
               </div>
             ) : priceInsights.observation_count > 0 ? (
               <p className="text-sm text-slate-600">
-                급락·급등으로 표시된 스냅샷은 없습니다. (잔차 기반 modified z-score가 임계값
-                미만)
-              </p>
-            ) : null}
-            {priceInsights.algorithm ? (
-              <p className="text-xs leading-relaxed text-slate-400">
-                알고리즘: 이상치 {priceInsights.algorithm.anomaly ?? "-"} · 예측{" "}
-                {priceInsights.algorithm.forecast ?? "-"}
-                {priceInsights.algorithm.reference
-                  ? ` · ${priceInsights.algorithm.reference}`
-                  : ""}
+                급락·급등으로 표시된 스냅샷은 없습니다.
               </p>
             ) : null}
           </div>
