@@ -227,6 +227,59 @@ async function fetchMallTimeline(mallName, days = 30, channel) {
   }
 }
 
+async function fetchAlertConfig() {
+  try {
+    const response = await authFetch(`${API_BASE}/alerts/config`);
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    console.error("Failed to fetch alert config:", error);
+    return {
+      enabled: false,
+      recipient_email: "",
+      threshold_price: 85000,
+      source_times_kst: ["00:00", "12:00"],
+      send_time_kst: "09:00",
+    };
+  }
+}
+
+async function saveAlertConfig(payload) {
+  const response = await authFetch(`${API_BASE}/alerts/config`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    let detail = `API error: ${response.status}`;
+    try {
+      const err = await response.json();
+      if (err?.detail) detail = String(err.detail);
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
+  }
+  return await response.json();
+}
+
+async function triggerAlertNow() {
+  const response = await authFetch(`${API_BASE}/alerts/trigger`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    let detail = `API error: ${response.status}`;
+    try {
+      const err = await response.json();
+      if (err?.detail) detail = String(err.detail);
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
+  }
+  return await response.json();
+}
+
 async function fetchMallPriceInsights(mallName, days = 30, channel) {
   const params = new URLSearchParams({
     mall_name: mallName,
@@ -5510,6 +5563,188 @@ function SellerDetail({
   );
 }
 
+function AlertSettingsPage() {
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [triggering, setTriggering] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const [enabled, setEnabled] = useState(false);
+  const [recipientEmail, setRecipientEmail] = useState("");
+  const [thresholdPrice, setThresholdPrice] = useState(85000);
+  const [sourceTime00, setSourceTime00] = useState(true);
+  const [sourceTime12, setSourceTime12] = useState(true);
+  const [sendTimeKst, setSendTimeKst] = useState("09:00");
+
+  const loadConfig = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    setMessage("");
+    try {
+      const conf = await fetchAlertConfig();
+      setEnabled(Boolean(conf.enabled));
+      setRecipientEmail(conf.recipient_email || "");
+      setThresholdPrice(Number(conf.threshold_price || 85000));
+      const times = Array.isArray(conf.source_times_kst) ? conf.source_times_kst : [];
+      setSourceTime00(times.includes("00:00"));
+      setSourceTime12(times.includes("12:00"));
+      setSendTimeKst(conf.send_time_kst || "09:00");
+    } catch (e) {
+      setError(String(e?.message || e || "설정 로드 실패"));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadConfig();
+  }, [loadConfig]);
+
+  const onSave = async () => {
+    setError("");
+    setMessage("");
+    if (!recipientEmail.trim()) {
+      setError("수신 이메일을 입력해주세요.");
+      return;
+    }
+    if (!sourceTime00 && !sourceTime12) {
+      setError("기준 시각(00:00, 12:00) 중 최소 1개를 선택해주세요.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const sourceTimes = [];
+      if (sourceTime00) sourceTimes.push("00:00");
+      if (sourceTime12) sourceTimes.push("12:00");
+      await saveAlertConfig({
+        enabled,
+        recipient_email: recipientEmail.trim(),
+        threshold_price: Number(thresholdPrice || 0),
+        source_times_kst: sourceTimes,
+      });
+      setMessage("알람 설정 저장 완료");
+    } catch (e) {
+      setError(String(e?.message || e || "알람 설정 저장 실패"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onTrigger = async () => {
+    setError("");
+    setMessage("");
+    setTriggering(true);
+    try {
+      const res = await triggerAlertNow();
+      if (res?.status === "sent") {
+        setMessage(
+          `테스트 발송 완료 (${res.target_date}, ${res.mall_count}개 거래처)`,
+        );
+      } else {
+        setMessage(`테스트 발송 스킵 (${res?.reason || "unknown"})`);
+      }
+    } catch (e) {
+      setError(String(e?.message || e || "테스트 발송 실패"));
+    } finally {
+      setTriggering(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card title="알람 설정">
+        <div className="space-y-4">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+            전일 00:00/12:00 데이터 중 기준가 미만 거래처를 집계해 다음날{" "}
+            {sendTimeKst} (KST)에 이메일 발송합니다.
+          </div>
+
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(e) => setEnabled(e.target.checked)}
+              disabled={loading}
+            />
+            매일 알람 활성화
+          </label>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
+              <div className="text-sm text-slate-600">수신 이메일</div>
+              <input
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                type="email"
+                value={recipientEmail}
+                onChange={(e) => setRecipientEmail(e.target.value)}
+                placeholder="you@example.com"
+                disabled={loading}
+              />
+            </div>
+            <div>
+              <div className="text-sm text-slate-600">기준가(원)</div>
+              <input
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                type="number"
+                value={thresholdPrice}
+                onChange={(e) => setThresholdPrice(Number(e.target.value || 0))}
+                min={1}
+                disabled={loading}
+              />
+            </div>
+          </div>
+
+          <div>
+            <div className="text-sm text-slate-600">전일 기준 시각(KST)</div>
+            <div className="mt-2 flex gap-4 text-sm">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={sourceTime00}
+                  onChange={(e) => setSourceTime00(e.target.checked)}
+                  disabled={loading}
+                />
+                00:00
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={sourceTime12}
+                  onChange={(e) => setSourceTime12(e.target.checked)}
+                  disabled={loading}
+                />
+                12:00
+              </label>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-2 pt-2">
+            <GhostButton onClick={loadConfig}>새로고침</GhostButton>
+            <GhostButton onClick={onTrigger}>
+              {triggering ? "테스트 발송 중..." : "지금 테스트 발송"}
+            </GhostButton>
+            <PrimaryButton onClick={onSave} disabled={saving || loading}>
+              {saving ? "저장 중..." : "설정 저장"}
+            </PrimaryButton>
+          </div>
+
+          {message ? (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+              {message}
+            </div>
+          ) : null}
+          {error ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {error}
+            </div>
+          ) : null}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 // -----------------------------
 // App Shell (simple internal routing)
 // -----------------------------
@@ -5906,6 +6141,12 @@ export default function App() {
             >
               {"원본 DB\n엑셀"}
             </HeaderNavButton>
+            <HeaderNavButton
+              active={location.pathname === "/alerts"}
+              onClick={() => navigate("/alerts")}
+            >
+              {"알람\n설정"}
+            </HeaderNavButton>
           </div>
           {hasToken ? (
             <button
@@ -6063,6 +6304,17 @@ export default function App() {
                   <GhostButton onClick={goMainDashboard}>← 메인으로</GhostButton>
                 </div>
                 <RawDataExportPage />
+              </div>
+            }
+          />
+          <Route
+            path="/alerts"
+            element={
+              <div className="space-y-3">
+                <div className="flex justify-end">
+                  <GhostButton onClick={goMainDashboard}>← 메인으로</GhostButton>
+                </div>
+                <AlertSettingsPage />
               </div>
             }
           />
