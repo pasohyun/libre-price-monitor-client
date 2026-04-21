@@ -238,7 +238,6 @@ async function fetchAlertConfig() {
       enabled: false,
       recipient_email: "",
       threshold_price: 85000,
-      source_times_kst: ["00:00", "12:00"],
       send_time_kst: "09:00",
     };
   }
@@ -5573,8 +5572,6 @@ function AlertSettingsPage() {
   const [enabled, setEnabled] = useState(false);
   const [recipientEmail, setRecipientEmail] = useState("");
   const [thresholdPrice, setThresholdPrice] = useState(85000);
-  const [sourceTime00, setSourceTime00] = useState(true);
-  const [sourceTime12, setSourceTime12] = useState(true);
   const [sendTimeKst, setSendTimeKst] = useState("09:00");
 
   const loadConfig = useCallback(async () => {
@@ -5586,9 +5583,6 @@ function AlertSettingsPage() {
       setEnabled(Boolean(conf.enabled));
       setRecipientEmail(conf.recipient_email || "");
       setThresholdPrice(Number(conf.threshold_price || 85000));
-      const times = Array.isArray(conf.source_times_kst) ? conf.source_times_kst : [];
-      setSourceTime00(times.includes("00:00"));
-      setSourceTime12(times.includes("12:00"));
       setSendTimeKst(conf.send_time_kst || "09:00");
     } catch (e) {
       setError(String(e?.message || e || "설정 로드 실패"));
@@ -5608,20 +5602,12 @@ function AlertSettingsPage() {
       setError("수신 이메일을 입력해주세요.");
       return;
     }
-    if (!sourceTime00 && !sourceTime12) {
-      setError("기준 시각(00:00, 12:00) 중 최소 1개를 선택해주세요.");
-      return;
-    }
     setSaving(true);
     try {
-      const sourceTimes = [];
-      if (sourceTime00) sourceTimes.push("00:00");
-      if (sourceTime12) sourceTimes.push("12:00");
       await saveAlertConfig({
         enabled,
         recipient_email: recipientEmail.trim(),
         threshold_price: Number(thresholdPrice || 0),
-        source_times_kst: sourceTimes,
       });
       setMessage("알람 설정 저장 완료");
     } catch (e) {
@@ -5656,7 +5642,7 @@ function AlertSettingsPage() {
       <Card title="알람 설정">
         <div className="space-y-4">
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-            전일 00:00/12:00 데이터 중 기준가 미만 거래처를 집계해 다음날{" "}
+            전일 전체 데이터에서 기준가 미만 거래처 리포트를 집계해 다음날{" "}
             {sendTimeKst} (KST)에 이메일 발송합니다.
           </div>
 
@@ -5692,30 +5678,6 @@ function AlertSettingsPage() {
                 min={1}
                 disabled={loading}
               />
-            </div>
-          </div>
-
-          <div>
-            <div className="text-sm text-slate-600">전일 기준 시각(KST)</div>
-            <div className="mt-2 flex gap-4 text-sm">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={sourceTime00}
-                  onChange={(e) => setSourceTime00(e.target.checked)}
-                  disabled={loading}
-                />
-                00:00
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={sourceTime12}
-                  onChange={(e) => setSourceTime12(e.target.checked)}
-                  disabled={loading}
-                />
-                12:00
-              </label>
             </div>
           </div>
 
