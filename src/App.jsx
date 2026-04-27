@@ -227,6 +227,58 @@ async function fetchMallTimeline(mallName, days = 30, channel) {
   }
 }
 
+async function fetchAlertConfig() {
+  try {
+    const response = await authFetch(`${API_BASE}/alerts/config`);
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    console.error("Failed to fetch alert config:", error);
+    return {
+      enabled: false,
+      recipient_emails: [],
+      threshold_price: 85000,
+      send_time_kst: "09:00",
+    };
+  }
+}
+
+async function saveAlertConfig(payload) {
+  const response = await authFetch(`${API_BASE}/alerts/config`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    let detail = `API error: ${response.status}`;
+    try {
+      const err = await response.json();
+      if (err?.detail) detail = String(err.detail);
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
+  }
+  return await response.json();
+}
+
+async function triggerAlertNow() {
+  const response = await authFetch(`${API_BASE}/alerts/trigger`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    let detail = `API error: ${response.status}`;
+    try {
+      const err = await response.json();
+      if (err?.detail) detail = String(err.detail);
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
+  }
+  return await response.json();
+}
+
 async function fetchMallPriceInsights(mallName, days = 30, channel) {
   const params = new URLSearchParams({
     mall_name: mallName,
@@ -2887,50 +2939,6 @@ function HtmlCardModal({
   );
 }
 
-function MedicalSerialModal({
-  open,
-  serialInput,
-  onChangeSerial,
-  onOpenLogin,
-  onClose,
-  onSubmit,
-}) {
-  if (!open) return null;
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-      onClick={onClose}
-    >
-      <div
-        className="w-[92vw] max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="text-lg font-semibold text-slate-900">
-          의료기기 페이지 이동
-        </div>
-        <div className="mt-1 text-sm text-slate-600">
-          먼저 로그인 페이지를 열어 로그인한 뒤, 시리얼 페이지 열기를 눌러 주세요.
-        </div>
-        <div className="mt-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
-          1) 로그인 페이지 열기  2) 시리얼 입력  3) 시리얼 페이지 열기
-        </div>
-        <input
-          className="mt-4 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
-          placeholder="시리얼 번호 입력"
-          value={serialInput}
-          onChange={(e) => onChangeSerial(e.target.value)}
-          autoFocus
-        />
-        <div className="mt-4 flex items-center justify-end gap-2">
-          <GhostButton onClick={onOpenLogin}>로그인 페이지 열기</GhostButton>
-          <GhostButton onClick={onClose}>취소</GhostButton>
-          <PrimaryButton onClick={onSubmit}>시리얼 페이지 열기</PrimaryButton>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function ManualQuantityModal({
   open,
   target,
@@ -4670,6 +4678,7 @@ function SellerDetail({
   const [priceInsights, setPriceInsights] = useState(null);
   const [priceInsightsLoading, setPriceInsightsLoading] = useState(true);
   const [priceInsightsError, setPriceInsightsError] = useState(null);
+  const [anomalyPage, setAnomalyPage] = useState(1);
 
   // API에서 셀러 타임라인 데이터 로드
   useEffect(() => {
@@ -4752,6 +4761,28 @@ function SellerDetail({
     const sum = timeline.reduce((acc, t) => acc + (t.unitPrice ?? 0), 0);
     return Math.round(sum / timeline.length);
   }, [timeline]);
+
+  const ANOMALIES_PER_PAGE = 5;
+  const sortedAnomalies = useMemo(() => {
+    const list = Array.isArray(priceInsights?.anomalies) ? [...priceInsights.anomalies] : [];
+    return list.sort((a, b) => {
+      const ta = parseDateLike(a?.ts)?.getTime() ?? 0;
+      const tb = parseDateLike(b?.ts)?.getTime() ?? 0;
+      return tb - ta;
+    });
+  }, [priceInsights]);
+  const anomalyTotalPages = Math.max(
+    1,
+    Math.ceil(sortedAnomalies.length / ANOMALIES_PER_PAGE),
+  );
+  const pagedAnomalies = useMemo(() => {
+    const start = (anomalyPage - 1) * ANOMALIES_PER_PAGE;
+    return sortedAnomalies.slice(start, start + ANOMALIES_PER_PAGE);
+  }, [sortedAnomalies, anomalyPage]);
+
+  useEffect(() => {
+    setAnomalyPage(1);
+  }, [sortedAnomalies.length]);
 
   // 날짜 목록 (필터 드롭다운용)
   const availableDates = useMemo(() => {
@@ -5169,19 +5200,6 @@ function SellerDetail({
               </span>
               개 (채널 필터와 타임라인 API와 동일)
             </p>
-            {priceInsights.algorithm?.snapshots_per_day_assumed != null ? (
-              <p className="text-xs text-slate-500">
-                운영 스케줄 가정: 하루{" "}
-                <span className="font-medium text-slate-700">
-                  {priceInsights.algorithm.snapshots_per_day_assumed}회
-                </span>{" "}
-                스냅샷 · 이상치 베이스라인 롤링 약{" "}
-                <span className="font-medium text-slate-700">
-                  {priceInsights.algorithm.rolling_median_days}일
-                </span>{" "}
-                ({priceInsights.algorithm.rolling_median_snapshots}개 시점)
-              </p>
-            ) : null}
             {priceInsights.observation_count === 0 ? (
               <p className="text-sm text-slate-500">
                 이 기간·채널에서 분석할 스냅샷 요약 데이터가 없습니다.
@@ -5197,19 +5215,32 @@ function SellerDetail({
                     {formatKRW(Math.round(priceInsights.forecast.predicted_min_price))}
                   </span>
                   <span className="text-xs text-slate-500">
-                    참고 구간 {formatKRW(Math.round(priceInsights.forecast.pred_low))} ~{" "}
+                    예상 범위 {formatKRW(Math.round(priceInsights.forecast.pred_low))} ~{" "}
                     {formatKRW(Math.round(priceInsights.forecast.pred_high))}
                   </span>
                 </div>
-                <div className="mt-1 text-xs text-slate-500">
-                  {priceInsights.forecast.method ===
-                  "statsmodels_exponential_smoothing_holt_additive"
-                    ? `최근 ${priceInsights.forecast.window}개 스냅샷 · Holt 가법 지수평활(추세 가산)`
-                    : `최근 ${priceInsights.forecast.window}개 스냅샷 · 선형 추세 OLS(폴백)`}
-                  {" · RMSE "}
-                  {priceInsights.forecast.rmse != null
-                    ? Math.round(priceInsights.forecast.rmse).toLocaleString("ko-KR")
-                    : "-"}
+                <div className="mt-2 space-y-1 text-xs text-slate-600">
+                  <div>
+                    기준가 대비{" "}
+                    <span className="font-medium text-slate-800">
+                      {formatKRW(
+                        Math.round(priceInsights.forecast.predicted_min_price) -
+                          (Number(settings.threshold) || 0),
+                      )}
+                    </span>
+                  </div>
+                  <div>
+                    변동 예상 폭{" "}
+                    <span className="font-medium text-slate-800">
+                      {formatKRW(
+                        Math.max(
+                          0,
+                          Math.round(priceInsights.forecast.pred_high) -
+                            Math.round(priceInsights.forecast.pred_low),
+                        ),
+                      )}
+                    </span>
+                  </div>
                 </div>
               </div>
             ) : priceInsights.observation_count > 0 ? (
@@ -5220,21 +5251,20 @@ function SellerDetail({
             {priceInsights.anomalies?.length > 0 ? (
               <div>
                 <div className="mb-2 text-sm font-semibold text-slate-800">
-                  통계적 급변 스냅샷 ({priceInsights.anomalies.length}건)
+                  가격 급변 스냅샷 ({sortedAnomalies.length}건)
                 </div>
                 <div className="overflow-x-auto rounded-lg border border-slate-200">
                   <table className="min-w-full text-left text-sm">
                     <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-600">
                       <tr>
                         <th className="px-3 py-2 font-medium">시각</th>
-                        <th className="px-3 py-2 font-medium">유형</th>
+                        <th className="px-3 py-2 font-medium">상태</th>
                         <th className="px-3 py-2 text-right font-medium">최저 단가</th>
-                        <th className="px-3 py-2 text-right font-medium">베이스라인</th>
-                        <th className="px-3 py-2 text-right font-medium">modified z</th>
+                        <th className="px-3 py-2 text-right font-medium">최근 기준 대비</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {priceInsights.anomalies.map((a, idx) => (
+                      {pagedAnomalies.map((a, idx) => (
                         <tr key={`${a.ts}-${idx}`} className="bg-white">
                           <td className="whitespace-nowrap px-3 py-2 text-slate-800">
                             {formatDateTimeKST(a.ts)}
@@ -5252,30 +5282,44 @@ function SellerDetail({
                             {formatKRW(a.min_price)}
                           </td>
                           <td className="px-3 py-2 text-right tabular-nums text-slate-600">
-                            {a.baseline != null ? formatKRW(Math.round(a.baseline)) : "—"}
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums text-slate-600">
-                            {a.modified_z != null ? Number(a.modified_z).toFixed(2) : "—"}
+                            {a.baseline != null
+                              ? formatKRW(Math.round(a.min_price - a.baseline))
+                              : "—"}
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
+                <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                  <span>
+                    페이지 {anomalyPage} / {anomalyTotalPages}
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={anomalyPage <= 1}
+                      onClick={() => setAnomalyPage((p) => Math.max(1, p - 1))}
+                      className="rounded border border-slate-200 px-2 py-1 disabled:opacity-40"
+                    >
+                      이전
+                    </button>
+                    <button
+                      type="button"
+                      disabled={anomalyPage >= anomalyTotalPages}
+                      onClick={() =>
+                        setAnomalyPage((p) => Math.min(anomalyTotalPages, p + 1))
+                      }
+                      className="rounded border border-slate-200 px-2 py-1 disabled:opacity-40"
+                    >
+                      다음
+                    </button>
+                  </div>
+                </div>
               </div>
             ) : priceInsights.observation_count > 0 ? (
               <p className="text-sm text-slate-600">
-                급락·급등으로 표시된 스냅샷은 없습니다. (잔차 기반 modified z-score가 임계값
-                미만)
-              </p>
-            ) : null}
-            {priceInsights.algorithm ? (
-              <p className="text-xs leading-relaxed text-slate-400">
-                알고리즘: 이상치 {priceInsights.algorithm.anomaly ?? "-"} · 예측{" "}
-                {priceInsights.algorithm.forecast ?? "-"}
-                {priceInsights.algorithm.reference
-                  ? ` · ${priceInsights.algorithm.reference}`
-                  : ""}
+                급락·급등으로 표시된 스냅샷은 없습니다.
               </p>
             ) : null}
           </div>
@@ -5519,6 +5563,196 @@ function SellerDetail({
   );
 }
 
+function AlertSettingsPage() {
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [triggering, setTriggering] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const [enabled, setEnabled] = useState(false);
+  const [recipientEmails, setRecipientEmails] = useState([""]);
+  const [thresholdPrice, setThresholdPrice] = useState(85000);
+  const [sendTimeKst, setSendTimeKst] = useState("09:00");
+
+  const loadConfig = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    setMessage("");
+    try {
+      const conf = await fetchAlertConfig();
+      setEnabled(Boolean(conf.enabled));
+      const emails = Array.isArray(conf.recipient_emails)
+        ? conf.recipient_emails
+        : conf.recipient_email
+          ? [conf.recipient_email]
+          : [];
+      setRecipientEmails(emails.length ? emails : [""]);
+      setThresholdPrice(Number(conf.threshold_price || 85000));
+      setSendTimeKst(conf.send_time_kst || "09:00");
+    } catch (e) {
+      setError(String(e?.message || e || "설정 로드 실패"));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadConfig();
+  }, [loadConfig]);
+
+  const onSave = async () => {
+    setError("");
+    setMessage("");
+    const cleanedEmails = recipientEmails
+      .map((e) => String(e || "").trim().toLowerCase())
+      .filter(Boolean);
+    if (cleanedEmails.length === 0) {
+      setError("수신 이메일을 최소 1개 입력해주세요.");
+      return;
+    }
+    if (cleanedEmails.length > 5) {
+      setError("수신 이메일은 최대 5개까지 설정할 수 있습니다.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await saveAlertConfig({
+        enabled,
+        recipient_emails: cleanedEmails,
+        threshold_price: Number(thresholdPrice || 0),
+      });
+      setMessage("알람 설정 저장 완료");
+    } catch (e) {
+      setError(String(e?.message || e || "알람 설정 저장 실패"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onTrigger = async () => {
+    setError("");
+    setMessage("");
+    setTriggering(true);
+    try {
+      const res = await triggerAlertNow();
+      if (res?.status === "sent") {
+        setMessage(
+          `테스트 발송 완료 (${res.target_date}, ${res.mall_count}개 거래처)`,
+        );
+      } else {
+        setMessage(`테스트 발송 스킵 (${res?.reason || "unknown"})`);
+      }
+    } catch (e) {
+      setError(String(e?.message || e || "테스트 발송 실패"));
+    } finally {
+      setTriggering(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card title="알람 설정">
+        <div className="space-y-4">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+            전일 전체 데이터에서 기준가 미만 거래처 리포트를 집계해 다음날{" "}
+            {sendTimeKst} (KST)에 이메일 발송합니다.
+          </div>
+
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(e) => setEnabled(e.target.checked)}
+              disabled={loading}
+            />
+            매일 알람 활성화
+          </label>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
+              <div className="text-sm text-slate-600">수신 이메일 (최대 5명)</div>
+              <div className="mt-1 space-y-2">
+                {recipientEmails.map((email, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <input
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                      type="email"
+                      value={email}
+                      onChange={(e) => {
+                        const next = [...recipientEmails];
+                        next[idx] = e.target.value;
+                        setRecipientEmails(next);
+                      }}
+                      placeholder={idx === 0 ? "2240052@daewoong.co.kr" : "libre2@daewoong.co.kr"}
+                      disabled={loading}
+                    />
+                    {recipientEmails.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = recipientEmails.filter((_, i) => i !== idx);
+                          setRecipientEmails(next.length ? next : [""]);
+                        }}
+                        className="rounded-lg border border-red-200 bg-red-50 px-2 py-2 text-xs text-red-700"
+                        disabled={loading}
+                      >
+                        삭제
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {recipientEmails.length < 5 && (
+                  <button
+                    type="button"
+                    onClick={() => setRecipientEmails([...recipientEmails, ""])}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600"
+                    disabled={loading}
+                  >
+                    + 이메일 추가
+                  </button>
+                )}
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-slate-600">기준가(원)</div>
+              <input
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                type="number"
+                value={thresholdPrice}
+                onChange={(e) => setThresholdPrice(Number(e.target.value || 0))}
+                min={1}
+                disabled={loading}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-2 pt-2">
+            <GhostButton onClick={loadConfig}>새로고침</GhostButton>
+            <GhostButton onClick={onTrigger}>
+              {triggering ? "테스트 발송 중..." : "지금 테스트 발송"}
+            </GhostButton>
+            <PrimaryButton onClick={onSave} disabled={saving || loading}>
+              {saving ? "저장 중..." : "설정 저장"}
+            </PrimaryButton>
+          </div>
+
+          {message ? (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+              {message}
+            </div>
+          ) : null}
+          {error ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {error}
+            </div>
+          ) : null}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 // -----------------------------
 // App Shell (simple internal routing)
 // -----------------------------
@@ -5567,28 +5801,12 @@ export default function App() {
     last_error: null,
     timezone: "Asia/Seoul",
   });
-  const [medicalModalOpen, setMedicalModalOpen] = useState(false);
-  const [medicalSerialInput, setMedicalSerialInput] = useState("");
   const wasCrawlRunningRef = useRef(false);
   const [hasToken, setHasToken] = useState(() => Boolean(getDashboardToken()));
   const [loading, setLoading] = useState(() => Boolean(getDashboardToken()));
 
   const handleOpenMedicalDeviceSite = () => {
-    setMedicalModalOpen(true);
-  };
-
-  const handleOpenMedicalLoginPage = () => {
     window.open(MEDICAL_DEVICE_BASE_URL, "_blank", "noopener,noreferrer");
-  };
-
-  const handleSubmitMedicalModal = () => {
-    const trimmed = (medicalSerialInput || "").trim();
-    const url = trimmed
-      ? `${MEDICAL_DEVICE_BASE_URL}?serialNumber=${encodeURIComponent(trimmed)}`
-      : MEDICAL_DEVICE_BASE_URL;
-    window.open(url, "_blank", "noopener,noreferrer");
-    setMedicalModalOpen(false);
-    setMedicalSerialInput("");
   };
 
   const goMainDashboard = () => {
@@ -5901,7 +6119,7 @@ export default function App() {
             <HeaderNavButton
               onClick={handleOpenMedicalDeviceSite}
             >
-              {"의료기기 링크\n(시리얼 입력)"}
+              {"의료기기 링크"}
             </HeaderNavButton>
             <HeaderNavButton
               active={location.pathname === "/range-report"}
@@ -5914,6 +6132,12 @@ export default function App() {
               onClick={() => navigate("/raw-export")}
             >
               {"원본 DB\n엑셀"}
+            </HeaderNavButton>
+            <HeaderNavButton
+              active={location.pathname === "/alerts"}
+              onClick={() => navigate("/alerts")}
+            >
+              {"알람\n설정"}
             </HeaderNavButton>
           </div>
           {hasToken ? (
@@ -5945,17 +6169,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <MedicalSerialModal
-        open={medicalModalOpen}
-        serialInput={medicalSerialInput}
-        onChangeSerial={setMedicalSerialInput}
-        onOpenLogin={handleOpenMedicalLoginPage}
-        onClose={() => {
-          setMedicalModalOpen(false);
-          setMedicalSerialInput("");
-        }}
-        onSubmit={handleSubmitMedicalModal}
-      />
       {header}
       {hasToken ? <GlobalMemoBoard /> : null}
       <main className="mx-auto max-w-[1600px] px-4 py-6">
@@ -6072,6 +6285,17 @@ export default function App() {
                   <GhostButton onClick={goMainDashboard}>← 메인으로</GhostButton>
                 </div>
                 <RawDataExportPage />
+              </div>
+            }
+          />
+          <Route
+            path="/alerts"
+            element={
+              <div className="space-y-3">
+                <div className="flex justify-end">
+                  <GhostButton onClick={goMainDashboard}>← 메인으로</GhostButton>
+                </div>
+                <AlertSettingsPage />
               </div>
             }
           />
