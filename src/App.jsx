@@ -1431,10 +1431,17 @@ const SELLER_DB_ALIASES = {
 const NAVER_FIXED_SELLER_DEFS = [
   { label: "닥터다이어리(닥다몰)", keys: ["닥다몰"] },
   { label: "랜식(글핏몰)", keys: ["랜식", "글핏몰", "글루코핏", "글루어트"] },
-  { label: "레디투힐", keys: ["레디투힐"] },
-  { label: "메디프라", keys: ["메디프라"] },
   { label: "필라이즈", keys: ["필라이즈"] },
 ];
+const COUPANG_FIXED_SELLER_DEFS = [
+  { label: "닥터다이어리", keys: ["닥터다이어리"] },
+  { label: "글루코핏", keys: ["글루코핏"] },
+  { label: "필라이즈", keys: ["필라이즈"] },
+];
+const CHANNEL_FIXED_SELLER_DEFS = {
+  naver: NAVER_FIXED_SELLER_DEFS,
+  coupang: COUPANG_FIXED_SELLER_DEFS,
+};
 const NAVER_FIXED_SELLER_LABELS = NAVER_FIXED_SELLER_DEFS.map((def) => def.label);
 const FIXED_MAJOR_CHANNELS = new Set(["naver", "coupang"]);
 const NAVER_FIXED_SELLER_DEFAULT = {
@@ -4239,7 +4246,7 @@ function ChannelSellers({
   const fixedSellerKeySet = useMemo(
     () =>
       new Set(
-        NAVER_FIXED_SELLER_DEFS.flatMap((def) => [
+        (CHANNEL_FIXED_SELLER_DEFS[channelKey] || []).flatMap((def) => [
           String(def.label).trim(),
           ...def.keys.map((k) => String(k).trim()),
         ]),
@@ -4249,11 +4256,13 @@ function ChannelSellers({
 
   const fixedMajorSellers = useMemo(() => {
     if (!FIXED_MAJOR_CHANNELS.has(channelKey)) return [];
+    const defs = CHANNEL_FIXED_SELLER_DEFS[channelKey] || [];
+    if (!defs.length) return [];
     const threshold =
       typeof settings.threshold === "string" && settings.threshold === ""
         ? Infinity
         : Number(settings.threshold) || Infinity;
-    return NAVER_FIXED_SELLER_DEFS
+    return defs
       .map((def) => {
         const timeline = Array.isArray(majorSellerTimelineMap[def.label])
           ? majorSellerTimelineMap[def.label]
@@ -4289,7 +4298,7 @@ function ChannelSellers({
 
   useEffect(() => {
     let cancelled = false;
-    if (channelKey !== "naver") {
+    if (!FIXED_MAJOR_CHANNELS.has(channelKey)) {
       setOtherSellerTimelineMap({});
       return () => {
         cancelled = true;
@@ -4317,7 +4326,7 @@ function ChannelSellers({
   }, [channelKey, dedupedDisplaySellers, fixedSellerKeySet]);
 
   const otherNaverSellers = useMemo(() => {
-    if (channelKey !== "naver") return [];
+    if (!FIXED_MAJOR_CHANNELS.has(channelKey)) return [];
     const threshold =
       typeof settings.threshold === "string" && settings.threshold === ""
         ? Infinity
@@ -4569,10 +4578,10 @@ function ChannelSellers({
         ))}
       </div>
 
-      {channelKey === "naver" && (
+      {FIXED_MAJOR_CHANNELS.has(channelKey) && otherNaverSellers.length > 0 && (
         <>
           <div className="pt-1">
-            <div className="text-sm text-slate-500">기타 네이버 판매처 (가격 하락순)</div>
+            <div className="text-sm text-slate-500">기타 {channelKey === "naver" ? "네이버" : "쿠팡"} 판매처 (가격 하락순)</div>
           </div>
           <div className="grid grid-cols-12 gap-4">
             {otherNaverSellers.map((s) => (
