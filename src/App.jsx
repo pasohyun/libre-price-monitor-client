@@ -437,7 +437,7 @@ async function fetchVendorMemosForSeller(channel, vendorLabel) {
   }
 }
 
-async function createVendorMemo(channel, vendorLabel, body, summary) {
+async function createVendorMemo(channel, vendorLabel, body, summary, imagePath = null) {
   const response = await authFetch(`${API_BASE}/memos/vendor`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -446,7 +446,29 @@ async function createVendorMemo(channel, vendorLabel, body, summary) {
       vendor_label: String(vendorLabel || ""),
       body,
       summary: summary || null,
+      image_path: imagePath || null,
     }),
+  });
+  if (!response.ok) {
+    let detail = `API error: ${response.status}`;
+    try {
+      const err = await response.json();
+      if (err?.detail) detail = String(err.detail);
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
+  }
+  return await response.json();
+}
+
+async function uploadMemoImage(file) {
+  const form = new FormData();
+  form.append("file", file);
+
+  const response = await authFetch(`${API_BASE}/memos/upload-image`, {
+    method: "POST",
+    body: form,
   });
   if (!response.ok) {
     let detail = `API error: ${response.status}`;
@@ -4675,6 +4697,8 @@ function SellerDetail({
   const [vmSummary, setVmSummary] = useState("");
   const [vmBody, setVmBody] = useState("");
   const [vmSaving, setVmSaving] = useState(false);
+  const [vmImageFile, setVmImageFile] = useState(null);
+  const [vmImagePreviewUrl, setVmImagePreviewUrl] = useState("");
   const [priceInsights, setPriceInsights] = useState(null);
   const [priceInsightsLoading, setPriceInsightsLoading] = useState(true);
   const [priceInsightsError, setPriceInsightsError] = useState(null);
@@ -4713,6 +4737,16 @@ function SellerDetail({
       cancelled = true;
     };
   }, [channelKey, sellerName]);
+
+  useEffect(() => {
+    if (!vmImageFile) {
+      setVmImagePreviewUrl("");
+      return undefined;
+    }
+    const objectUrl = URL.createObjectURL(vmImageFile);
+    setVmImagePreviewUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [vmImageFile]);
 
   const reloadPriceInsights = useCallback(
     async ({ silent } = {}) => {
@@ -5355,6 +5389,33 @@ function SellerDetail({
               placeholder="특이사항, 합의, 연락 이력, 예외 규칙 등"
             />
           </label>
+          <label className="md:col-span-12 text-xs font-medium text-slate-600">
+            이미지 첨부 (선택)
+            <div className="mt-1 flex flex-wrap items-center gap-3">
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                className="text-sm text-slate-700"
+                onChange={(e) => {
+                  const f = e.target.files && e.target.files[0] ? e.target.files[0] : null;
+                  setVmImageFile(f);
+                }}
+              />
+              {vmImagePreviewUrl ? (
+                <button
+                  type="button"
+                  className="group"
+                  onClick={() => setPreviewImage(vmImagePreviewUrl)}
+                >
+                  <img
+                    src={vmImagePreviewUrl}
+                    alt="memo-upload-preview"
+                    className="h-14 w-20 rounded-md border border-slate-200 object-cover group-hover:ring-2 group-hover:ring-slate-400"
+                  />
+                </button>
+              ) : null}
+            </div>
+          </label>
           <div className="md:col-span-12 flex justify-end">
             <PrimaryButton
               disabled={vmSaving}
@@ -5366,14 +5427,21 @@ function SellerDetail({
                 }
                 setVmSaving(true);
                 try {
+                  let imagePath = null;
+                  if (vmImageFile) {
+                    const uploaded = await uploadMemoImage(vmImageFile);
+                    imagePath = uploaded?.image_path || null;
+                  }
                   await createVendorMemo(
                     channelKey,
                     sellerName,
                     b,
                     (vmSummary || "").trim() || null,
+                    imagePath,
                   );
                   setVmBody("");
                   setVmSummary("");
+                  setVmImageFile(null);
                   const list = await fetchVendorMemosForSeller(channelKey, sellerName);
                   setVendorMemos(Array.isArray(list) ? list : []);
                 } catch (e) {
@@ -5402,6 +5470,19 @@ function SellerDetail({
                     <div className="font-semibold text-slate-900">{m.summary}</div>
                   ) : null}
                   <div className="mt-1 whitespace-pre-wrap break-words">{m.body}</div>
+                  {m.image_url ? (
+                    <button
+                      type="button"
+                      className="mt-2 group"
+                      onClick={() => setPreviewImage(m.image_url)}
+                    >
+                      <img
+                        src={m.image_url}
+                        alt="memo-attachment"
+                        className="h-20 w-28 rounded-md border border-slate-200 object-cover group-hover:ring-2 group-hover:ring-slate-400"
+                      />
+                    </button>
+                  ) : null}
                   <div className="mt-1 text-xs text-slate-500">
                     작성: {formatDateTimeKST(m.created_at)}
                   </div>
