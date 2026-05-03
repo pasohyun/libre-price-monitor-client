@@ -390,11 +390,11 @@ async function fetchGlobalMemos() {
   }
 }
 
-async function createGlobalMemo(body, summary) {
+async function createGlobalMemo(body, summary, imagePath = null) {
   const response = await authFetch(`${API_BASE}/memos/global`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ body, summary: summary || null }),
+    body: JSON.stringify({ body, summary: summary || null, image_path: imagePath || null }),
   });
   if (!response.ok) {
     let detail = `API error: ${response.status}`;
@@ -1644,6 +1644,8 @@ function GlobalMemoBoard() {
   const [summary, setSummary] = useState("");
   const [body, setBody] = useState("");
   const [saving, setSaving] = useState(false);
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1659,6 +1661,16 @@ function GlobalMemoBoard() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    if (!imageFile) {
+      setImagePreviewUrl("");
+      return undefined;
+    }
+    const objectUrl = URL.createObjectURL(imageFile);
+    setImagePreviewUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [imageFile]);
+
   const handleSave = async () => {
     const b = (body || "").trim();
     if (!b) {
@@ -1667,9 +1679,15 @@ function GlobalMemoBoard() {
     }
     setSaving(true);
     try {
-      await createGlobalMemo(b, (summary || "").trim() || null);
+      let imagePath = null;
+      if (imageFile) {
+        const uploaded = await uploadMemoImage(imageFile);
+        imagePath = uploaded?.image_path || null;
+      }
+      await createGlobalMemo(b, (summary || "").trim() || null, imagePath);
       setBody("");
       setSummary("");
+      setImageFile(null);
       await load();
     } catch (e) {
       window.alert(String(e?.message || e));
@@ -1741,6 +1759,34 @@ function GlobalMemoBoard() {
                     placeholder="운영 공지, 협의 사항, 주의할 업체/채널 등"
                   />
                 </label>
+                <label className="md:col-span-12 text-xs font-medium text-slate-600">
+                  이미지 첨부 (선택)
+                  <div className="mt-1 flex flex-wrap items-center gap-3">
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      className="text-sm text-slate-700"
+                      onChange={(e) => {
+                        const f = e.target.files && e.target.files[0] ? e.target.files[0] : null;
+                        setImageFile(f);
+                      }}
+                    />
+                    {imagePreviewUrl ? (
+                      <a
+                        href={imagePreviewUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="group"
+                      >
+                        <img
+                          src={imagePreviewUrl}
+                          alt="global-memo-upload-preview"
+                          className="h-14 w-20 rounded-md border border-slate-200 object-cover group-hover:ring-2 group-hover:ring-slate-400"
+                        />
+                      </a>
+                    ) : null}
+                  </div>
+                </label>
                 <div className="md:col-span-12 flex justify-end">
                   <PrimaryButton onClick={handleSave} disabled={saving}>
                     {saving ? "저장 중…" : "공용 메모 등록"}
@@ -1766,6 +1812,20 @@ function GlobalMemoBoard() {
                       <div className="mt-1 whitespace-pre-wrap break-words text-slate-700">
                         {m.body}
                       </div>
+                      {m.image_url ? (
+                        <a
+                          href={m.image_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-2 inline-block group"
+                        >
+                          <img
+                            src={m.image_url}
+                            alt="global-memo-attachment"
+                            className="h-20 w-28 rounded-md border border-slate-200 object-cover group-hover:ring-2 group-hover:ring-slate-400"
+                          />
+                        </a>
+                      ) : null}
                       <div className="mt-1 text-xs text-slate-500">
                         작성: {formatDateTimeKST(m.created_at)}
                       </div>
