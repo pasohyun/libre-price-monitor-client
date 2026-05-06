@@ -390,11 +390,15 @@ async function fetchGlobalMemos() {
   }
 }
 
-async function createGlobalMemo(body, summary, imagePath = null) {
+async function createGlobalMemo(body, summary, imagePaths = null) {
+  const payload = { body, summary: summary || null };
+  if (Array.isArray(imagePaths) && imagePaths.length > 0) {
+    payload.image_paths = imagePaths;
+  }
   const response = await authFetch(`${API_BASE}/memos/global`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ body, summary: summary || null, image_path: imagePath || null }),
+    body: JSON.stringify(payload),
   });
   if (!response.ok) {
     let detail = `API error: ${response.status}`;
@@ -437,17 +441,20 @@ async function fetchVendorMemosForSeller(channel, vendorLabel) {
   }
 }
 
-async function createVendorMemo(channel, vendorLabel, body, summary, imagePath = null) {
+async function createVendorMemo(channel, vendorLabel, body, summary, imagePaths = null) {
+  const payload = {
+    channel: String(channel || ""),
+    vendor_label: String(vendorLabel || ""),
+    body,
+    summary: summary || null,
+  };
+  if (Array.isArray(imagePaths) && imagePaths.length > 0) {
+    payload.image_paths = imagePaths;
+  }
   const response = await authFetch(`${API_BASE}/memos/vendor`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      channel: String(channel || ""),
-      vendor_label: String(vendorLabel || ""),
-      body,
-      summary: summary || null,
-      image_path: imagePath || null,
-    }),
+    body: JSON.stringify(payload),
   });
   if (!response.ok) {
     let detail = `API error: ${response.status}`;
@@ -481,6 +488,13 @@ async function uploadMemoImage(file) {
     throw new Error(detail);
   }
   return await response.json();
+}
+
+function memoAttachmentUrls(memo) {
+  if (!memo) return [];
+  if (Array.isArray(memo.image_urls) && memo.image_urls.length > 0) return memo.image_urls;
+  if (memo.image_url) return [memo.image_url];
+  return [];
 }
 
 async function deleteDashboardMemo(memoId) {
@@ -1644,8 +1658,8 @@ function GlobalMemoBoard() {
   const [summary, setSummary] = useState("");
   const [body, setBody] = useState("");
   const [saving, setSaving] = useState(false);
-  const [imageFile, setImageFile] = useState(null);
-  const [imagePreviewUrl, setImagePreviewUrl] = useState("");
+  const [imageFiles, setImageFiles] = useState([]);
+  const [imagePreviewUrls, setImagePreviewUrls] = useState([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1662,14 +1676,16 @@ function GlobalMemoBoard() {
   }, [load]);
 
   useEffect(() => {
-    if (!imageFile) {
-      setImagePreviewUrl("");
+    if (!imageFiles.length) {
+      setImagePreviewUrls([]);
       return undefined;
     }
-    const objectUrl = URL.createObjectURL(imageFile);
-    setImagePreviewUrl(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [imageFile]);
+    const urls = imageFiles.map((f) => URL.createObjectURL(f));
+    setImagePreviewUrls(urls);
+    return () => {
+      urls.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [imageFiles]);
 
   const handleSave = async () => {
     const b = (body || "").trim();
@@ -1677,17 +1693,21 @@ function GlobalMemoBoard() {
       window.alert("메모 내용을 입력해 주세요.");
       return;
     }
+    if (imageFiles.length > 10) {
+      window.alert("이미지는 최대 10장까지 첨부할 수 있습니다.");
+      return;
+    }
     setSaving(true);
     try {
-      let imagePath = null;
-      if (imageFile) {
-        const uploaded = await uploadMemoImage(imageFile);
-        imagePath = uploaded?.image_path || null;
+      const paths = [];
+      for (const f of imageFiles) {
+        const uploaded = await uploadMemoImage(f);
+        if (uploaded?.image_path) paths.push(uploaded.image_path);
       }
-      await createGlobalMemo(b, (summary || "").trim() || null, imagePath);
+      await createGlobalMemo(b, (summary || "").trim() || null, paths.length ? paths : null);
       setBody("");
       setSummary("");
-      setImageFile(null);
+      setImageFiles([]);
       await load();
     } catch (e) {
       window.alert(String(e?.message || e));
@@ -1760,30 +1780,36 @@ function GlobalMemoBoard() {
                   />
                 </label>
                 <label className="md:col-span-12 text-xs font-medium text-slate-600">
-                  이미지 첨부 (선택)
+                  이미지 첨부 (선택, 최대 10장)
                   <div className="mt-1 flex flex-wrap items-center gap-3">
                     <input
                       type="file"
+                      multiple
                       accept="image/png,image/jpeg,image/webp,image/gif"
                       className="text-sm text-slate-700"
                       onChange={(e) => {
-                        const f = e.target.files && e.target.files[0] ? e.target.files[0] : null;
-                        setImageFile(f);
+                        const list = e.target.files ? Array.from(e.target.files) : [];
+                        setImageFiles(list.slice(0, 10));
                       }}
                     />
-                    {imagePreviewUrl ? (
-                      <a
-                        href={imagePreviewUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="group"
-                      >
-                        <img
-                          src={imagePreviewUrl}
-                          alt="global-memo-upload-preview"
-                          className="h-14 w-20 rounded-md border border-slate-200 object-cover group-hover:ring-2 group-hover:ring-slate-400"
-                        />
-                      </a>
+                    {imagePreviewUrls.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {imagePreviewUrls.map((url, idx) => (
+                          <a
+                            key={`g-preview-${idx}`}
+                            href={url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="group"
+                          >
+                            <img
+                              src={url}
+                              alt={`global-memo-upload-preview-${idx}`}
+                              className="h-14 w-20 rounded-md border border-slate-200 object-cover group-hover:ring-2 group-hover:ring-slate-400"
+                            />
+                          </a>
+                        ))}
+                      </div>
                     ) : null}
                   </div>
                 </label>
@@ -1812,19 +1838,24 @@ function GlobalMemoBoard() {
                       <div className="mt-1 whitespace-pre-wrap break-words text-slate-700">
                         {m.body}
                       </div>
-                      {m.image_url ? (
-                        <a
-                          href={m.image_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="mt-2 inline-block group"
-                        >
-                          <img
-                            src={m.image_url}
-                            alt="global-memo-attachment"
-                            className="h-20 w-28 rounded-md border border-slate-200 object-cover group-hover:ring-2 group-hover:ring-slate-400"
-                          />
-                        </a>
+                      {memoAttachmentUrls(m).length > 0 ? (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {memoAttachmentUrls(m).map((url, idx) => (
+                            <a
+                              key={`${m.id}-att-${idx}`}
+                              href={url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="group inline-block"
+                            >
+                              <img
+                                src={url}
+                                alt={`global-memo-attachment-${idx}`}
+                                className="h-20 w-28 rounded-md border border-slate-200 object-cover group-hover:ring-2 group-hover:ring-slate-400"
+                              />
+                            </a>
+                          ))}
+                        </div>
                       ) : null}
                       <div className="mt-1 text-xs text-slate-500">
                         작성: {formatDateTimeKST(m.created_at)}
@@ -1856,6 +1887,7 @@ function VendorMemosAggregateCard({ onOpenSeller, sellerOptions = [] }) {
   const [quickSummary, setQuickSummary] = useState("");
   const [quickBody, setQuickBody] = useState("");
   const [quickSaving, setQuickSaving] = useState(false);
+  const [quickImageFiles, setQuickImageFiles] = useState([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1913,11 +1945,27 @@ function VendorMemosAggregateCard({ onOpenSeller, sellerOptions = [] }) {
     }
     const channel = sellerKey.slice(0, sep);
     const vendor = sellerKey.slice(sep + 1);
+    if (quickImageFiles.length > 10) {
+      window.alert("이미지는 최대 10장까지 첨부할 수 있습니다.");
+      return;
+    }
     setQuickSaving(true);
     try {
-      await createVendorMemo(channel, vendor, body, String(quickSummary || "").trim() || null);
+      const paths = [];
+      for (const f of quickImageFiles) {
+        const up = await uploadMemoImage(f);
+        if (up?.image_path) paths.push(up.image_path);
+      }
+      await createVendorMemo(
+        channel,
+        vendor,
+        body,
+        String(quickSummary || "").trim() || null,
+        paths.length ? paths : null,
+      );
       setQuickBody("");
       setQuickSummary("");
+      setQuickImageFiles([]);
       await load();
       if (typeof onOpenSeller === "function") onOpenSeller(channel, vendor);
     } catch (e) {
@@ -1988,6 +2036,19 @@ function VendorMemosAggregateCard({ onOpenSeller, sellerOptions = [] }) {
               placeholder="해당 업체 관련 메모를 입력하세요."
             />
           </label>
+          <label className="md:col-span-12 text-xs font-medium text-slate-600">
+            이미지 첨부 (선택, 최대 10장)
+            <input
+              type="file"
+              multiple
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              className="mt-1 block text-sm text-slate-700"
+              onChange={(e) => {
+                const list = e.target.files ? Array.from(e.target.files) : [];
+                setQuickImageFiles(list.slice(0, 10));
+              }}
+            />
+          </label>
           <div className="md:col-span-2 flex items-end justify-end">
             <PrimaryButton onClick={handleQuickSave} disabled={quickSaving}>
               {quickSaving ? "등록 중…" : "빠른 등록"}
@@ -2036,7 +2097,30 @@ function VendorMemosAggregateCard({ onOpenSeller, sellerOptions = [] }) {
                 <td className="px-3 py-2 whitespace-nowrap text-slate-600">
                   {formatDateTimeKST(m.created_at)}
                 </td>
-                <td className="px-3 py-2 text-slate-600">{preview(m.body)}</td>
+                <td className="px-3 py-2 text-slate-600">
+                  <div className="flex items-start gap-2">
+                    <span className="min-w-0 flex-1">{preview(m.body)}</span>
+                    {memoAttachmentUrls(m).length > 0 ? (
+                      <div className="flex shrink-0 flex-wrap justify-end gap-0.5">
+                        {memoAttachmentUrls(m)
+                          .slice(0, 3)
+                          .map((url, idx) => (
+                            <img
+                              key={`agg-thumb-${m.id}-${idx}`}
+                              src={url}
+                              alt=""
+                              className="h-8 w-10 rounded border border-slate-200 object-cover"
+                            />
+                          ))}
+                        {memoAttachmentUrls(m).length > 3 ? (
+                          <span className="self-center text-xs text-slate-500">
+                            +{memoAttachmentUrls(m).length - 3}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                </td>
                 <td className="px-3 py-2 whitespace-nowrap">
                   <div className="flex flex-wrap gap-1">
                     <button
@@ -4757,8 +4841,8 @@ function SellerDetail({
   const [vmSummary, setVmSummary] = useState("");
   const [vmBody, setVmBody] = useState("");
   const [vmSaving, setVmSaving] = useState(false);
-  const [vmImageFile, setVmImageFile] = useState(null);
-  const [vmImagePreviewUrl, setVmImagePreviewUrl] = useState("");
+  const [vmImageFiles, setVmImageFiles] = useState([]);
+  const [vmImagePreviewUrls, setVmImagePreviewUrls] = useState([]);
   const [priceInsights, setPriceInsights] = useState(null);
   const [priceInsightsLoading, setPriceInsightsLoading] = useState(true);
   const [priceInsightsError, setPriceInsightsError] = useState(null);
@@ -4799,14 +4883,16 @@ function SellerDetail({
   }, [channelKey, sellerName]);
 
   useEffect(() => {
-    if (!vmImageFile) {
-      setVmImagePreviewUrl("");
+    if (!vmImageFiles.length) {
+      setVmImagePreviewUrls([]);
       return undefined;
     }
-    const objectUrl = URL.createObjectURL(vmImageFile);
-    setVmImagePreviewUrl(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [vmImageFile]);
+    const urls = vmImageFiles.map((f) => URL.createObjectURL(f));
+    setVmImagePreviewUrls(urls);
+    return () => {
+      urls.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [vmImageFiles]);
 
   const reloadPriceInsights = useCallback(
     async ({ silent } = {}) => {
@@ -5450,29 +5536,35 @@ function SellerDetail({
             />
           </label>
           <label className="md:col-span-12 text-xs font-medium text-slate-600">
-            이미지 첨부 (선택)
+            이미지 첨부 (선택, 최대 10장)
             <div className="mt-1 flex flex-wrap items-center gap-3">
               <input
                 type="file"
+                multiple
                 accept="image/png,image/jpeg,image/webp,image/gif"
                 className="text-sm text-slate-700"
                 onChange={(e) => {
-                  const f = e.target.files && e.target.files[0] ? e.target.files[0] : null;
-                  setVmImageFile(f);
+                  const list = e.target.files ? Array.from(e.target.files) : [];
+                  setVmImageFiles(list.slice(0, 10));
                 }}
               />
-              {vmImagePreviewUrl ? (
-                <button
-                  type="button"
-                  className="group"
-                  onClick={() => setPreviewImage(vmImagePreviewUrl)}
-                >
-                  <img
-                    src={vmImagePreviewUrl}
-                    alt="memo-upload-preview"
-                    className="h-14 w-20 rounded-md border border-slate-200 object-cover group-hover:ring-2 group-hover:ring-slate-400"
-                  />
-                </button>
+              {vmImagePreviewUrls.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {vmImagePreviewUrls.map((url, idx) => (
+                    <button
+                      key={`vm-preview-${idx}`}
+                      type="button"
+                      className="group"
+                      onClick={() => setPreviewImage(url)}
+                    >
+                      <img
+                        src={url}
+                        alt={`memo-upload-preview-${idx}`}
+                        className="h-14 w-20 rounded-md border border-slate-200 object-cover group-hover:ring-2 group-hover:ring-slate-400"
+                      />
+                    </button>
+                  ))}
+                </div>
               ) : null}
             </div>
           </label>
@@ -5485,23 +5577,27 @@ function SellerDetail({
                   window.alert("메모 내용을 입력해 주세요.");
                   return;
                 }
+                if (vmImageFiles.length > 10) {
+                  window.alert("이미지는 최대 10장까지 첨부할 수 있습니다.");
+                  return;
+                }
                 setVmSaving(true);
                 try {
-                  let imagePath = null;
-                  if (vmImageFile) {
-                    const uploaded = await uploadMemoImage(vmImageFile);
-                    imagePath = uploaded?.image_path || null;
+                  const paths = [];
+                  for (const f of vmImageFiles) {
+                    const uploaded = await uploadMemoImage(f);
+                    if (uploaded?.image_path) paths.push(uploaded.image_path);
                   }
                   await createVendorMemo(
                     channelKey,
                     sellerName,
                     b,
                     (vmSummary || "").trim() || null,
-                    imagePath,
+                    paths.length ? paths : null,
                   );
                   setVmBody("");
                   setVmSummary("");
-                  setVmImageFile(null);
+                  setVmImageFiles([]);
                   const list = await fetchVendorMemosForSeller(channelKey, sellerName);
                   setVendorMemos(Array.isArray(list) ? list : []);
                 } catch (e) {
@@ -5530,18 +5626,23 @@ function SellerDetail({
                     <div className="font-semibold text-slate-900">{m.summary}</div>
                   ) : null}
                   <div className="mt-1 whitespace-pre-wrap break-words">{m.body}</div>
-                  {m.image_url ? (
-                    <button
-                      type="button"
-                      className="mt-2 group"
-                      onClick={() => setPreviewImage(m.image_url)}
-                    >
-                      <img
-                        src={m.image_url}
-                        alt="memo-attachment"
-                        className="h-20 w-28 rounded-md border border-slate-200 object-cover group-hover:ring-2 group-hover:ring-slate-400"
-                      />
-                    </button>
+                  {memoAttachmentUrls(m).length > 0 ? (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {memoAttachmentUrls(m).map((url, idx) => (
+                        <button
+                          key={`${m.id}-vm-${idx}`}
+                          type="button"
+                          className="group"
+                          onClick={() => setPreviewImage(url)}
+                        >
+                          <img
+                            src={url}
+                            alt={`memo-attachment-${idx}`}
+                            className="h-20 w-28 rounded-md border border-slate-200 object-cover group-hover:ring-2 group-hover:ring-slate-400"
+                          />
+                        </button>
+                      ))}
+                    </div>
                   ) : null}
                   <div className="mt-1 text-xs text-slate-500">
                     작성: {formatDateTimeKST(m.created_at)}
