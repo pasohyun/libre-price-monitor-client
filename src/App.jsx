@@ -1811,7 +1811,33 @@ function GlobalMemoBoard() {
                         ))}
                       </div>
                     ) : null}
+                    {imageFiles.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setImageFiles([])}
+                        className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        전체 제거
+                      </button>
+                    ) : null}
                   </div>
+                  {imageFiles.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {imageFiles.map((f, idx) => (
+                        <button
+                          key={`g-file-${idx}`}
+                          type="button"
+                          onClick={() =>
+                            setImageFiles((prev) => prev.filter((_, i) => i !== idx))
+                          }
+                          className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[11px] text-slate-700 hover:bg-slate-50"
+                          title="첨부 목록에서 제거"
+                        >
+                          {f.name} ×
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                 </label>
                 <div className="md:col-span-12 flex justify-end">
                   <PrimaryButton onClick={handleSave} disabled={saving}>
@@ -2048,6 +2074,30 @@ function VendorMemosAggregateCard({ onOpenSeller, sellerOptions = [] }) {
                 setQuickImageFiles(list.slice(0, 10));
               }}
             />
+            {quickImageFiles.length > 0 ? (
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setQuickImageFiles([])}
+                  className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  전체 제거
+                </button>
+                {quickImageFiles.map((f, idx) => (
+                  <button
+                    key={`q-file-${idx}`}
+                    type="button"
+                    onClick={() =>
+                      setQuickImageFiles((prev) => prev.filter((_, i) => i !== idx))
+                    }
+                    className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[11px] text-slate-700 hover:bg-slate-50"
+                    title="첨부 목록에서 제거"
+                  >
+                    {f.name} ×
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </label>
           <div className="md:col-span-2 flex items-end justify-end">
             <PrimaryButton onClick={handleQuickSave} disabled={quickSaving}>
@@ -5566,7 +5616,33 @@ function SellerDetail({
                   ))}
                 </div>
               ) : null}
+              {vmImageFiles.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setVmImageFiles([])}
+                  className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  전체 제거
+                </button>
+              ) : null}
             </div>
+            {vmImageFiles.length > 0 ? (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {vmImageFiles.map((f, idx) => (
+                  <button
+                    key={`vm-file-${idx}`}
+                    type="button"
+                    onClick={() =>
+                      setVmImageFiles((prev) => prev.filter((_, i) => i !== idx))
+                    }
+                    className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[11px] text-slate-700 hover:bg-slate-50"
+                    title="첨부 목록에서 제거"
+                  >
+                    {f.name} ×
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </label>
           <div className="md:col-span-12 flex justify-end">
             <PrimaryButton
