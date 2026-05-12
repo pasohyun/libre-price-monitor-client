@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback, useRef } from "react";
+import { useMemo, useState, useEffect, useCallback, useRef, Fragment } from "react";
 import "./App.css";
 import Report from "./Report.jsx";
 import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
@@ -497,9 +497,49 @@ function memoAttachmentUrls(memo) {
   return [];
 }
 
+/** 저장 경로(S3 키 등) 목록 — 수정 시 재전송용 */
+function memoAttachmentPaths(memo) {
+  if (!memo) return [];
+  if (Array.isArray(memo.image_paths) && memo.image_paths.length > 0) {
+    return memo.image_paths.map((p) => String(p || "").trim()).filter(Boolean);
+  }
+  const one = memo.image_path != null ? String(memo.image_path).trim() : "";
+  return one ? [one] : [];
+}
+
+/** 편집 중 기존 첨부 썸네일: path → 표시 URL */
+function memoPathToPreviewUrlMap(memo) {
+  const paths = memoAttachmentPaths(memo);
+  const urls = memoAttachmentUrls(memo);
+  const map = {};
+  paths.forEach((p, i) => {
+    map[p] = urls[i] || urls[0] || "";
+  });
+  return map;
+}
+
 async function deleteDashboardMemo(memoId) {
   const response = await authFetch(`${API_BASE}/memos/${encodeURIComponent(String(memoId))}`, {
     method: "DELETE",
+  });
+  if (!response.ok) {
+    let detail = `API error: ${response.status}`;
+    try {
+      const err = await response.json();
+      if (err?.detail) detail = String(err.detail);
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
+  }
+  return await response.json();
+}
+
+async function updateDashboardMemo(memoId, payload) {
+  const response = await authFetch(`${API_BASE}/memos/${encodeURIComponent(String(memoId))}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
   if (!response.ok) {
     let detail = `API error: ${response.status}`;
@@ -1653,6 +1693,13 @@ function Card({ title, right, children, className = "" }) {
 
 function GlobalMemoBoard() {
   const [expanded, setExpanded] = useState(true);
+  const [boardHidden, setBoardHidden] = useState(() => {
+    try {
+      return window.localStorage.getItem("libre_ui_hide_global_memo") === "1";
+    } catch {
+      return false;
+    }
+  });
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState("");
@@ -1660,6 +1707,23 @@ function GlobalMemoBoard() {
   const [saving, setSaving] = useState(false);
   const [imageFiles, setImageFiles] = useState([]);
   const [imagePreviewUrls, setImagePreviewUrls] = useState([]);
+  const [editingId, setEditingId] = useState(null);
+  const [editSummary, setEditSummary] = useState("");
+  const [editBody, setEditBody] = useState("");
+  const [editKeptPaths, setEditKeptPaths] = useState([]);
+  const [editUrlMap, setEditUrlMap] = useState({});
+  const [editNewFiles, setEditNewFiles] = useState([]);
+  const [editNewPreviewUrls, setEditNewPreviewUrls] = useState([]);
+  const [editSaving, setEditSaving] = useState(false);
+
+  const persistBoardHidden = (v) => {
+    setBoardHidden(v);
+    try {
+      window.localStorage.setItem("libre_ui_hide_global_memo", v ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1686,6 +1750,36 @@ function GlobalMemoBoard() {
       urls.forEach((u) => URL.revokeObjectURL(u));
     };
   }, [imageFiles]);
+
+  useEffect(() => {
+    if (!editNewFiles.length) {
+      setEditNewPreviewUrls([]);
+      return undefined;
+    }
+    const urls = editNewFiles.map((f) => URL.createObjectURL(f));
+    setEditNewPreviewUrls(urls);
+    return () => {
+      urls.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [editNewFiles]);
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditSummary("");
+    setEditBody("");
+    setEditKeptPaths([]);
+    setEditUrlMap({});
+    setEditNewFiles([]);
+  };
+
+  const beginEdit = (m) => {
+    setEditingId(m.id);
+    setEditSummary(m.summary || "");
+    setEditBody(m.body || "");
+    setEditKeptPaths(memoAttachmentPaths(m));
+    setEditUrlMap(memoPathToPreviewUrlMap(m));
+    setEditNewFiles([]);
+  };
 
   const handleSave = async () => {
     const b = (body || "").trim();
@@ -1716,15 +1810,65 @@ function GlobalMemoBoard() {
     }
   };
 
+  const handleSaveEdit = async () => {
+    if (!editingId) return;
+    const b = (editBody || "").trim();
+    if (!b) {
+      window.alert("메모 내용을 입력해 주세요.");
+      return;
+    }
+    if (editKeptPaths.length + editNewFiles.length > 10) {
+      window.alert("이미지는 최대 10장까지 첨부할 수 있습니다.");
+      return;
+    }
+    setEditSaving(true);
+    try {
+      const paths = [...editKeptPaths];
+      for (const f of editNewFiles) {
+        const uploaded = await uploadMemoImage(f);
+        if (uploaded?.image_path) paths.push(uploaded.image_path);
+      }
+      await updateDashboardMemo(editingId, {
+        body: b,
+        summary: (editSummary || "").trim() || null,
+        image_paths: paths,
+      });
+      cancelEdit();
+      await load();
+    } catch (e) {
+      window.alert(String(e?.message || e));
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   const handleDelete = async (id) => {
     if (!window.confirm("이 메모를 삭제할까요?")) return;
     try {
       await deleteDashboardMemo(id);
+      if (editingId === id) cancelEdit();
       await load();
     } catch (e) {
       window.alert(String(e?.message || e));
     }
   };
+
+  if (boardHidden) {
+    return (
+      <div className="border-b border-amber-200/60 bg-amber-50/50">
+        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-2 px-4 py-2">
+          <span className="text-sm text-amber-900/80">전체 운영 메모 영역을 숨겼습니다.</span>
+          <button
+            type="button"
+            onClick={() => persistBoardHidden(false)}
+            className="rounded-lg border border-amber-300/80 bg-white px-3 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100"
+          >
+            메모 영역 보이기
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="border-b border-amber-200/80 bg-gradient-to-b from-amber-50 to-amber-50/40">
@@ -1751,6 +1895,13 @@ function GlobalMemoBoard() {
               className="rounded-lg border border-amber-300/80 bg-white px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100"
             >
               {expanded ? "접기" : "펼치기"}
+            </button>
+            <button
+              type="button"
+              onClick={() => persistBoardHidden(true)}
+              className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            >
+              이 영역 숨기기
             </button>
           </div>
         </div>
@@ -1856,45 +2007,164 @@ function GlobalMemoBoard() {
                   key={m.id}
                   className="rounded-lg border border-amber-100 bg-white/95 px-3 py-2 text-sm text-slate-800 shadow-sm"
                 >
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      {m.summary ? (
-                        <div className="font-semibold text-slate-900">{m.summary}</div>
-                      ) : null}
-                      <div className="mt-1 whitespace-pre-wrap break-words text-slate-700">
-                        {m.body}
+                  {editingId === m.id ? (
+                    <div className="space-y-2">
+                      <div className="text-xs font-semibold text-amber-900">메모 수정</div>
+                      <label className="block text-xs font-medium text-slate-600">
+                        요약 (선택)
+                        <input
+                          value={editSummary}
+                          onChange={(e) => setEditSummary(e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-900"
+                          maxLength={500}
+                        />
+                      </label>
+                      <label className="block text-xs font-medium text-slate-600">
+                        메모 내용
+                        <textarea
+                          value={editBody}
+                          onChange={(e) => setEditBody(e.target.value)}
+                          rows={3}
+                          className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-900"
+                        />
+                      </label>
+                      <div className="text-xs font-medium text-slate-600">
+                        기존 이미지 (×로 제거)
+                        {editKeptPaths.length > 0 ? (
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {editKeptPaths.map((p) => (
+                              <div key={`keep-${p}`} className="relative inline-block">
+                                {editUrlMap[p] ? (
+                                  <img
+                                    src={editUrlMap[p]}
+                                    alt=""
+                                    className="h-16 w-24 rounded-md border border-slate-200 object-cover"
+                                  />
+                                ) : (
+                                  <span className="inline-block h-16 w-24 rounded-md border border-slate-200 bg-slate-100" />
+                                )}
+                                <button
+                                  type="button"
+                                  title="첨부 제거"
+                                  onClick={() =>
+                                    setEditKeptPaths((prev) => prev.filter((x) => x !== p))
+                                  }
+                                  className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white shadow"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="mt-1 text-slate-500">없음</div>
+                        )}
                       </div>
-                      {memoAttachmentUrls(m).length > 0 ? (
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {memoAttachmentUrls(m).map((url, idx) => (
-                            <a
-                              key={`${m.id}-att-${idx}`}
-                              href={url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="group inline-block"
-                            >
+                      <label className="block text-xs font-medium text-slate-600">
+                        이미지 추가 (선택)
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/png,image/jpeg,image/webp,image/gif"
+                          className="mt-1 block text-sm text-slate-700"
+                          onChange={(e) => {
+                            const list = e.target.files ? Array.from(e.target.files) : [];
+                            setEditNewFiles(list.slice(0, 10));
+                          }}
+                        />
+                        {editNewPreviewUrls.length > 0 ? (
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {editNewPreviewUrls.map((url, idx) => (
                               <img
+                                key={`enp-${idx}`}
                                 src={url}
-                                alt={`global-memo-attachment-${idx}`}
-                                className="h-20 w-28 rounded-md border border-slate-200 object-cover group-hover:ring-2 group-hover:ring-slate-400"
+                                alt=""
+                                className="h-14 w-20 rounded-md border border-slate-200 object-cover"
                               />
-                            </a>
-                          ))}
-                        </div>
-                      ) : null}
-                      <div className="mt-1 text-xs text-slate-500">
-                        작성: {formatDateTimeKST(m.created_at)}
+                            ))}
+                          </div>
+                        ) : null}
+                        {editNewFiles.length > 0 ? (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {editNewFiles.map((f, idx) => (
+                              <button
+                                key={`enf-${idx}`}
+                                type="button"
+                                onClick={() =>
+                                  setEditNewFiles((prev) => prev.filter((_, i) => i !== idx))
+                                }
+                                className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[11px] text-slate-700"
+                              >
+                                {f.name} ×
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
+                      </label>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={cancelEdit}
+                          disabled={editSaving}
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          취소
+                        </button>
+                        <PrimaryButton onClick={handleSaveEdit} disabled={editSaving}>
+                          {editSaving ? "저장 중…" : "저장"}
+                        </PrimaryButton>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(m.id)}
-                      className="shrink-0 rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-100"
-                    >
-                      삭제
-                    </button>
-                  </div>
+                  ) : (
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        {m.summary ? (
+                          <div className="font-semibold text-slate-900">{m.summary}</div>
+                        ) : null}
+                        <div className="mt-1 whitespace-pre-wrap break-words text-slate-700">
+                          {m.body}
+                        </div>
+                        {memoAttachmentUrls(m).length > 0 ? (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {memoAttachmentUrls(m).map((url, idx) => (
+                              <a
+                                key={`${m.id}-att-${idx}`}
+                                href={url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="group inline-block"
+                              >
+                                <img
+                                  src={url}
+                                  alt={`global-memo-attachment-${idx}`}
+                                  className="h-20 w-28 rounded-md border border-slate-200 object-cover group-hover:ring-2 group-hover:ring-slate-400"
+                                />
+                              </a>
+                            ))}
+                          </div>
+                        ) : null}
+                        <div className="mt-1 text-xs text-slate-500">
+                          작성: {formatDateTimeKST(m.created_at)}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 flex-col gap-1 sm:flex-row">
+                        <button
+                          type="button"
+                          onClick={() => beginEdit(m)}
+                          className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900 hover:bg-amber-100"
+                        >
+                          수정
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(m.id)}
+                          className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-100"
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -1906,6 +2176,21 @@ function GlobalMemoBoard() {
 }
 
 function VendorMemosAggregateCard({ onOpenSeller, sellerOptions = [] }) {
+  const [aggHidden, setAggHidden] = useState(() => {
+    try {
+      return window.localStorage.getItem("libre_ui_hide_vendor_memo_agg") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const persistAggHidden = (v) => {
+    setAggHidden(v);
+    try {
+      window.localStorage.setItem("libre_ui_hide_vendor_memo_agg", v ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  };
   const [data, setData] = useState({ count: 0, items: [] });
   const [loading, setLoading] = useState(true);
   const [quickSeller, setQuickSeller] = useState("");
@@ -1914,6 +2199,14 @@ function VendorMemosAggregateCard({ onOpenSeller, sellerOptions = [] }) {
   const [quickBody, setQuickBody] = useState("");
   const [quickSaving, setQuickSaving] = useState(false);
   const [quickImageFiles, setQuickImageFiles] = useState([]);
+  const [aggEditId, setAggEditId] = useState(null);
+  const [aggEditSummary, setAggEditSummary] = useState("");
+  const [aggEditBody, setAggEditBody] = useState("");
+  const [aggEditKeptPaths, setAggEditKeptPaths] = useState([]);
+  const [aggEditUrlMap, setAggEditUrlMap] = useState({});
+  const [aggEditNewFiles, setAggEditNewFiles] = useState([]);
+  const [aggEditNewPreviewUrls, setAggEditNewPreviewUrls] = useState([]);
+  const [aggEditSaving, setAggEditSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -2001,18 +2294,106 @@ function VendorMemosAggregateCard({ onOpenSeller, sellerOptions = [] }) {
     }
   };
 
+  useEffect(() => {
+    if (!aggEditNewFiles.length) {
+      setAggEditNewPreviewUrls([]);
+      return undefined;
+    }
+    const urls = aggEditNewFiles.map((f) => URL.createObjectURL(f));
+    setAggEditNewPreviewUrls(urls);
+    return () => {
+      urls.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [aggEditNewFiles]);
+
+  const cancelAggEdit = () => {
+    setAggEditId(null);
+    setAggEditSummary("");
+    setAggEditBody("");
+    setAggEditKeptPaths([]);
+    setAggEditUrlMap({});
+    setAggEditNewFiles([]);
+  };
+
+  const beginAggEdit = (m) => {
+    setAggEditId(m.id);
+    setAggEditSummary(m.summary || "");
+    setAggEditBody(m.body || "");
+    setAggEditKeptPaths(memoAttachmentPaths(m));
+    setAggEditUrlMap(memoPathToPreviewUrlMap(m));
+    setAggEditNewFiles([]);
+  };
+
+  const saveAggEdit = async () => {
+    if (!aggEditId) return;
+    const b = (aggEditBody || "").trim();
+    if (!b) {
+      window.alert("메모 내용을 입력해 주세요.");
+      return;
+    }
+    if (aggEditKeptPaths.length + aggEditNewFiles.length > 10) {
+      window.alert("이미지는 최대 10장까지 첨부할 수 있습니다.");
+      return;
+    }
+    setAggEditSaving(true);
+    try {
+      const paths = [...aggEditKeptPaths];
+      for (const f of aggEditNewFiles) {
+        const up = await uploadMemoImage(f);
+        if (up?.image_path) paths.push(up.image_path);
+      }
+      await updateDashboardMemo(aggEditId, {
+        body: b,
+        summary: (aggEditSummary || "").trim() || null,
+        image_paths: paths,
+      });
+      cancelAggEdit();
+      await load();
+    } catch (e) {
+      window.alert(String(e?.message || e));
+    } finally {
+      setAggEditSaving(false);
+    }
+  };
+
+  if (aggHidden) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-3 text-sm text-slate-700 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span>업체 메모 취합 카드를 숨겼습니다.</span>
+          <button
+            type="button"
+            onClick={() => persistAggHidden(false)}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-800 hover:bg-slate-100"
+          >
+            카드 보이기
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Card
       title="업체 메모 취합 · 조회"
       right={
-        <button
-          type="button"
-          onClick={load}
-          disabled={loading}
-          className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-        >
-          {loading ? "불러오는 중…" : "새로고침"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={load}
+            disabled={loading}
+            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+          >
+            {loading ? "불러오는 중…" : "새로고침"}
+          </button>
+          <button
+            type="button"
+            onClick={() => persistAggHidden(true)}
+            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+          >
+            카드 숨기기
+          </button>
+        </div>
       }
     >
       <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -2138,66 +2519,176 @@ function VendorMemosAggregateCard({ onOpenSeller, sellerOptions = [] }) {
               </tr>
             ) : null}
             {data.items.map((m) => (
-              <tr key={m.id} className="border-t border-slate-100 align-top">
-                <td className="px-3 py-2 text-slate-800">{channelLabel(m.channel)}</td>
-                <td className="px-3 py-2 font-medium text-slate-900">
-                  {displaySellerName(m.channel, m.vendor_label)}
-                </td>
-                <td className="px-3 py-2 text-slate-700">{m.summary || "—"}</td>
-                <td className="px-3 py-2 whitespace-nowrap text-slate-600">
-                  {formatDateTimeKST(m.created_at)}
-                </td>
-                <td className="px-3 py-2 text-slate-600">
-                  <div className="flex items-start gap-2">
-                    <span className="min-w-0 flex-1">{preview(m.body)}</span>
-                    {memoAttachmentUrls(m).length > 0 ? (
-                      <div className="flex shrink-0 flex-wrap justify-end gap-0.5">
-                        {memoAttachmentUrls(m)
-                          .slice(0, 3)
-                          .map((url, idx) => (
-                            <img
-                              key={`agg-thumb-${m.id}-${idx}`}
-                              src={url}
-                              alt=""
-                              className="h-8 w-10 rounded border border-slate-200 object-cover"
-                            />
-                          ))}
-                        {memoAttachmentUrls(m).length > 3 ? (
-                          <span className="self-center text-xs text-slate-500">
-                            +{memoAttachmentUrls(m).length - 3}
-                          </span>
-                        ) : null}
+              <Fragment key={m.id}>
+                <tr className="border-t border-slate-100 align-top">
+                  <td className="px-3 py-2 text-slate-800">{channelLabel(m.channel)}</td>
+                  <td className="px-3 py-2 font-medium text-slate-900">
+                    {displaySellerName(m.channel, m.vendor_label)}
+                  </td>
+                  <td className="px-3 py-2 text-slate-700">{m.summary || "—"}</td>
+                  <td className="px-3 py-2 whitespace-nowrap text-slate-600">
+                    {formatDateTimeKST(m.created_at)}
+                  </td>
+                  <td className="px-3 py-2 text-slate-600">
+                    <div className="flex items-start gap-2">
+                      <span className="min-w-0 flex-1">{preview(m.body)}</span>
+                      {memoAttachmentUrls(m).length > 0 ? (
+                        <div className="flex shrink-0 flex-wrap justify-end gap-0.5">
+                          {memoAttachmentUrls(m)
+                            .slice(0, 3)
+                            .map((url, idx) => (
+                              <img
+                                key={`agg-thumb-${m.id}-${idx}`}
+                                src={url}
+                                alt=""
+                                className="h-8 w-10 rounded border border-slate-200 object-cover"
+                              />
+                            ))}
+                          {memoAttachmentUrls(m).length > 3 ? (
+                            <span className="self-center text-xs text-slate-500">
+                              +{memoAttachmentUrls(m).length - 3}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <div className="flex flex-wrap gap-1">
+                      <button
+                        type="button"
+                        onClick={() => goSeller(m.channel, m.vendor_label)}
+                        className="rounded border border-slate-200 bg-white px-2 py-0.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        세부
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => beginAggEdit(m)}
+                        className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900 hover:bg-amber-100"
+                      >
+                        수정
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!window.confirm("이 메모를 삭제할까요?")) return;
+                          try {
+                            await deleteDashboardMemo(m.id);
+                            if (aggEditId === m.id) cancelAggEdit();
+                            await load();
+                          } catch (e) {
+                            window.alert(String(e?.message || e));
+                          }
+                        }}
+                        className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-100"
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                {aggEditId === m.id ? (
+                  <tr className="border-t border-amber-100 bg-amber-50/50">
+                    <td colSpan={6} className="px-3 py-3">
+                      <div className="space-y-2 text-sm">
+                        <div className="text-xs font-semibold text-amber-900">
+                          메모 수정 · {channelLabel(m.channel)} /{" "}
+                          {displaySellerName(m.channel, m.vendor_label)}
+                        </div>
+                        <label className="block text-xs font-medium text-slate-600">
+                          요약 (선택)
+                          <input
+                            value={aggEditSummary}
+                            onChange={(e) => setAggEditSummary(e.target.value)}
+                            className="mt-1 w-full max-w-xl rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm"
+                            maxLength={500}
+                          />
+                        </label>
+                        <label className="block text-xs font-medium text-slate-600">
+                          본문
+                          <textarea
+                            value={aggEditBody}
+                            onChange={(e) => setAggEditBody(e.target.value)}
+                            rows={3}
+                            className="mt-1 w-full max-w-2xl rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm"
+                          />
+                        </label>
+                        <div className="text-xs font-medium text-slate-600">
+                          기존 이미지
+                          {aggEditKeptPaths.length > 0 ? (
+                            <div className="mt-1 flex flex-wrap gap-2">
+                              {aggEditKeptPaths.map((p) => (
+                                <div key={`aggk-${p}`} className="relative inline-block">
+                                  {aggEditUrlMap[p] ? (
+                                    <img
+                                      src={aggEditUrlMap[p]}
+                                      alt=""
+                                      className="h-14 w-20 rounded-md border border-slate-200 object-cover"
+                                    />
+                                  ) : (
+                                    <span className="inline-block h-14 w-20 rounded-md border border-slate-200 bg-slate-100" />
+                                  )}
+                                  <button
+                                    type="button"
+                                    title="첨부 제거"
+                                    onClick={() =>
+                                      setAggEditKeptPaths((prev) => prev.filter((x) => x !== p))
+                                    }
+                                    className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white shadow"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="mt-1 block text-slate-500">없음</span>
+                          )}
+                        </div>
+                        <label className="block text-xs font-medium text-slate-600">
+                          이미지 추가
+                          <input
+                            type="file"
+                            multiple
+                            accept="image/png,image/jpeg,image/webp,image/gif"
+                            className="mt-1 block text-sm"
+                            onChange={(e) => {
+                              const list = e.target.files ? Array.from(e.target.files) : [];
+                              setAggEditNewFiles(list.slice(0, 10));
+                            }}
+                          />
+                          {aggEditNewPreviewUrls.length > 0 ? (
+                            <div className="mt-1 flex flex-wrap gap-2">
+                              {aggEditNewPreviewUrls.map((url, idx) => (
+                                <img
+                                  key={`aggp-${idx}`}
+                                  src={url}
+                                  alt=""
+                                  className="h-12 w-16 rounded border border-slate-200 object-cover"
+                                />
+                              ))}
+                            </div>
+                          ) : null}
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={cancelAggEdit}
+                            disabled={aggEditSaving}
+                            className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                          >
+                            취소
+                          </button>
+                          <PrimaryButton onClick={saveAggEdit} disabled={aggEditSaving}>
+                            {aggEditSaving ? "저장 중…" : "저장"}
+                          </PrimaryButton>
+                        </div>
                       </div>
-                    ) : null}
-                  </div>
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap">
-                  <div className="flex flex-wrap gap-1">
-                    <button
-                      type="button"
-                      onClick={() => goSeller(m.channel, m.vendor_label)}
-                      className="rounded border border-slate-200 bg-white px-2 py-0.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                    >
-                      세부
-                    </button>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (!window.confirm("이 메모를 삭제할까요?")) return;
-                        try {
-                          await deleteDashboardMemo(m.id);
-                          await load();
-                        } catch (e) {
-                          window.alert(String(e?.message || e));
-                        }
-                      }}
-                      className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-100"
-                    >
-                      삭제
-                    </button>
-                  </div>
-                </td>
-              </tr>
+                    </td>
+                  </tr>
+                ) : null}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -4893,6 +5384,29 @@ function SellerDetail({
   const [vmSaving, setVmSaving] = useState(false);
   const [vmImageFiles, setVmImageFiles] = useState([]);
   const [vmImagePreviewUrls, setVmImagePreviewUrls] = useState([]);
+  const [sellerVmCardHidden, setSellerVmCardHidden] = useState(() => {
+    try {
+      return window.localStorage.getItem("libre_ui_hide_seller_vendor_memo") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const persistSellerVmCardHidden = (v) => {
+    setSellerVmCardHidden(v);
+    try {
+      window.localStorage.setItem("libre_ui_hide_seller_vendor_memo", v ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  };
+  const [vmEditingId, setVmEditingId] = useState(null);
+  const [vmEditSummary, setVmEditSummary] = useState("");
+  const [vmEditBody, setVmEditBody] = useState("");
+  const [vmEditKeptPaths, setVmEditKeptPaths] = useState([]);
+  const [vmEditUrlMap, setVmEditUrlMap] = useState({});
+  const [vmEditNewFiles, setVmEditNewFiles] = useState([]);
+  const [vmEditNewPreviewUrls, setVmEditNewPreviewUrls] = useState([]);
+  const [vmEditSaving, setVmEditSaving] = useState(false);
   const [priceInsights, setPriceInsights] = useState(null);
   const [priceInsightsLoading, setPriceInsightsLoading] = useState(true);
   const [priceInsightsError, setPriceInsightsError] = useState(null);
@@ -4933,6 +5447,15 @@ function SellerDetail({
   }, [channelKey, sellerName]);
 
   useEffect(() => {
+    setVmEditingId(null);
+    setVmEditSummary("");
+    setVmEditBody("");
+    setVmEditKeptPaths([]);
+    setVmEditUrlMap({});
+    setVmEditNewFiles([]);
+  }, [channelKey, sellerName]);
+
+  useEffect(() => {
     if (!vmImageFiles.length) {
       setVmImagePreviewUrls([]);
       return undefined;
@@ -4943,6 +5466,69 @@ function SellerDetail({
       urls.forEach((u) => URL.revokeObjectURL(u));
     };
   }, [vmImageFiles]);
+
+  useEffect(() => {
+    if (!vmEditNewFiles.length) {
+      setVmEditNewPreviewUrls([]);
+      return undefined;
+    }
+    const urls = vmEditNewFiles.map((f) => URL.createObjectURL(f));
+    setVmEditNewPreviewUrls(urls);
+    return () => {
+      urls.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [vmEditNewFiles]);
+
+  const cancelVmEdit = () => {
+    setVmEditingId(null);
+    setVmEditSummary("");
+    setVmEditBody("");
+    setVmEditKeptPaths([]);
+    setVmEditUrlMap({});
+    setVmEditNewFiles([]);
+  };
+
+  const beginVmEdit = (m) => {
+    setVmEditingId(m.id);
+    setVmEditSummary(m.summary || "");
+    setVmEditBody(m.body || "");
+    setVmEditKeptPaths(memoAttachmentPaths(m));
+    setVmEditUrlMap(memoPathToPreviewUrlMap(m));
+    setVmEditNewFiles([]);
+  };
+
+  const saveVmEdit = async () => {
+    if (!vmEditingId) return;
+    const b = (vmEditBody || "").trim();
+    if (!b) {
+      window.alert("메모 내용을 입력해 주세요.");
+      return;
+    }
+    if (vmEditKeptPaths.length + vmEditNewFiles.length > 10) {
+      window.alert("이미지는 최대 10장까지 첨부할 수 있습니다.");
+      return;
+    }
+    setVmEditSaving(true);
+    try {
+      const paths = [...vmEditKeptPaths];
+      for (const f of vmEditNewFiles) {
+        const uploaded = await uploadMemoImage(f);
+        if (uploaded?.image_path) paths.push(uploaded.image_path);
+      }
+      await updateDashboardMemo(vmEditingId, {
+        body: b,
+        summary: (vmEditSummary || "").trim() || null,
+        image_paths: paths,
+      });
+      cancelVmEdit();
+      const list = await fetchVendorMemosForSeller(channelKey, sellerName);
+      setVendorMemos(Array.isArray(list) ? list : []);
+    } catch (e) {
+      window.alert(String(e?.message || e));
+    } finally {
+      setVmEditSaving(false);
+    }
+  };
 
   const reloadPriceInsights = useCallback(
     async ({ silent } = {}) => {
@@ -5556,14 +6142,39 @@ function SellerDetail({
         ) : null}
       </Card>
 
-      <Card
-        title={`판매처 메모 · ${displaySellerName(channelKey, sellerName)}`}
-        right={
-          vendorMemosLoading ? (
-            <span className="text-xs text-slate-500">불러오는 중…</span>
-          ) : null
-        }
-      >
+      {sellerVmCardHidden ? (
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-3 text-sm text-slate-700 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span>
+              판매처 메모 카드를 숨겼습니다. ({displaySellerName(channelKey, sellerName)})
+            </span>
+            <button
+              type="button"
+              onClick={() => persistSellerVmCardHidden(false)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-800 hover:bg-slate-100"
+            >
+              카드 보이기
+            </button>
+          </div>
+        </div>
+      ) : (
+        <Card
+          title={`판매처 메모 · ${displaySellerName(channelKey, sellerName)}`}
+          right={
+            <div className="flex flex-wrap items-center gap-2">
+              {vendorMemosLoading ? (
+                <span className="text-xs text-slate-500">불러오는 중…</span>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => persistSellerVmCardHidden(true)}
+                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+              >
+                카드 숨기기
+              </button>
+            </div>
+          }
+        >
         <div className="grid gap-3 md:grid-cols-12">
           <label className="md:col-span-12 text-xs font-medium text-slate-600">
             요약 (선택)
@@ -5696,55 +6307,182 @@ function SellerDetail({
               key={m.id}
               className="rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2 text-sm text-slate-800"
             >
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  {m.summary ? (
-                    <div className="font-semibold text-slate-900">{m.summary}</div>
-                  ) : null}
-                  <div className="mt-1 whitespace-pre-wrap break-words">{m.body}</div>
-                  {memoAttachmentUrls(m).length > 0 ? (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {memoAttachmentUrls(m).map((url, idx) => (
-                        <button
-                          key={`${m.id}-vm-${idx}`}
-                          type="button"
-                          className="group"
-                          onClick={() => setPreviewImage(url)}
-                        >
+              {vmEditingId === m.id ? (
+                <div className="space-y-2">
+                  <div className="text-xs font-semibold text-slate-800">메모 수정</div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    요약 (선택)
+                    <input
+                      value={vmEditSummary}
+                      onChange={(e) => setVmEditSummary(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm"
+                      maxLength={500}
+                    />
+                  </label>
+                  <label className="block text-xs font-medium text-slate-600">
+                    메모 내용
+                    <textarea
+                      value={vmEditBody}
+                      onChange={(e) => setVmEditBody(e.target.value)}
+                      rows={3}
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm"
+                    />
+                  </label>
+                  <div className="text-xs font-medium text-slate-600">
+                    기존 이미지
+                    {vmEditKeptPaths.length > 0 ? (
+                      <div className="mt-1 flex flex-wrap gap-2">
+                        {vmEditKeptPaths.map((p) => (
+                          <div key={`vmk-${p}`} className="relative inline-block">
+                            {vmEditUrlMap[p] ? (
+                              <button
+                                type="button"
+                                className="group"
+                                onClick={() => setPreviewImage(vmEditUrlMap[p])}
+                              >
+                                <img
+                                  src={vmEditUrlMap[p]}
+                                  alt=""
+                                  className="h-16 w-24 rounded-md border border-slate-200 object-cover group-hover:ring-2 group-hover:ring-slate-400"
+                                />
+                              </button>
+                            ) : (
+                              <span className="inline-block h-16 w-24 rounded-md border border-slate-200 bg-slate-100" />
+                            )}
+                            <button
+                              type="button"
+                              title="첨부 제거"
+                              onClick={() =>
+                                setVmEditKeptPaths((prev) => prev.filter((x) => x !== p))
+                              }
+                              className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white shadow"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="mt-1 block text-slate-500">없음</span>
+                    )}
+                  </div>
+                  <label className="block text-xs font-medium text-slate-600">
+                    이미지 추가
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      className="mt-1 block text-sm"
+                      onChange={(e) => {
+                        const list = e.target.files ? Array.from(e.target.files) : [];
+                        setVmEditNewFiles(list.slice(0, 10));
+                      }}
+                    />
+                    {vmEditNewPreviewUrls.length > 0 ? (
+                      <div className="mt-1 flex flex-wrap gap-2">
+                        {vmEditNewPreviewUrls.map((url, idx) => (
                           <img
+                            key={`vmenp-${idx}`}
                             src={url}
-                            alt={`memo-attachment-${idx}`}
-                            className="h-20 w-28 rounded-md border border-slate-200 object-cover group-hover:ring-2 group-hover:ring-slate-400"
+                            alt=""
+                            className="h-14 w-20 rounded-md border border-slate-200 object-cover"
                           />
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                  <div className="mt-1 text-xs text-slate-500">
-                    작성: {formatDateTimeKST(m.created_at)}
+                        ))}
+                      </div>
+                    ) : null}
+                    {vmEditNewFiles.length > 0 ? (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {vmEditNewFiles.map((f, idx) => (
+                          <button
+                            key={`vmenf-${idx}`}
+                            type="button"
+                            onClick={() =>
+                              setVmEditNewFiles((prev) => prev.filter((_, i) => i !== idx))
+                            }
+                            className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[11px] text-slate-700"
+                          >
+                            {f.name} ×
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </label>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={cancelVmEdit}
+                      disabled={vmEditSaving}
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      취소
+                    </button>
+                    <PrimaryButton onClick={saveVmEdit} disabled={vmEditSaving}>
+                      {vmEditSaving ? "저장 중…" : "저장"}
+                    </PrimaryButton>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (!window.confirm("이 메모를 삭제할까요?")) return;
-                    try {
-                      await deleteDashboardMemo(m.id);
-                      const list = await fetchVendorMemosForSeller(channelKey, sellerName);
-                      setVendorMemos(Array.isArray(list) ? list : []);
-                    } catch (e) {
-                      window.alert(String(e?.message || e));
-                    }
-                  }}
-                  className="shrink-0 rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-100"
-                >
-                  삭제
-                </button>
-              </div>
+              ) : (
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    {m.summary ? (
+                      <div className="font-semibold text-slate-900">{m.summary}</div>
+                    ) : null}
+                    <div className="mt-1 whitespace-pre-wrap break-words">{m.body}</div>
+                    {memoAttachmentUrls(m).length > 0 ? (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {memoAttachmentUrls(m).map((url, idx) => (
+                          <button
+                            key={`${m.id}-vm-${idx}`}
+                            type="button"
+                            className="group"
+                            onClick={() => setPreviewImage(url)}
+                          >
+                            <img
+                              src={url}
+                              alt={`memo-attachment-${idx}`}
+                              className="h-20 w-28 rounded-md border border-slate-200 object-cover group-hover:ring-2 group-hover:ring-slate-400"
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="mt-1 text-xs text-slate-500">
+                      작성: {formatDateTimeKST(m.created_at)}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 flex-col gap-1 sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={() => beginVmEdit(m)}
+                      className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900 hover:bg-amber-100"
+                    >
+                      수정
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!window.confirm("이 메모를 삭제할까요?")) return;
+                        try {
+                          await deleteDashboardMemo(m.id);
+                          if (vmEditingId === m.id) cancelVmEdit();
+                          const list = await fetchVendorMemosForSeller(channelKey, sellerName);
+                          setVendorMemos(Array.isArray(list) ? list : []);
+                        } catch (e) {
+                          window.alert(String(e?.message || e));
+                        }
+                      }}
+                      className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-100"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
       </Card>
+      )}
 
       {!timelineLoading && rows.length === 0 && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
