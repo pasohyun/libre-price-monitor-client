@@ -179,10 +179,12 @@ async function fetchMallsTop(limit = 10) {
   }
 }
 
-async function runCrawlNow() {
+async function runCrawlNow(sources = ["naver"]) {
   try {
     const response = await authFetch(`${API_BASE}/products/crawl/run`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sources }),
     });
     if (!response.ok) throw new Error(`API error: ${response.status}`);
     return await response.json();
@@ -3400,6 +3402,26 @@ function SettingsPanel({
   const running = !!crawlStatus?.running;
   const lastStarted = formatDateTimeKST(crawlStatus?.last_started_at);
   const lastFinished = formatDateTimeKST(crawlStatus?.last_finished_at);
+  const coupangLastTriggeredRaw = crawlStatus?.coupang_last_triggered_at;
+  const coupangLastTriggered = coupangLastTriggeredRaw
+    ? formatDateTimeKST(coupangLastTriggeredRaw)
+    : null;
+  const coupangTriggerStatus = crawlStatus?.coupang_last_trigger_result?.status;
+  const coupangTriggerMessage = crawlStatus?.coupang_last_trigger_result?.message;
+  const [crawlNaver, setCrawlNaver] = useState(true);
+  const [crawlCoupang, setCrawlCoupang] = useState(false);
+  const noSourceSelected = !crawlNaver && !crawlCoupang;
+  // 네이버 체크 + 이미 실행 중이면 비활성. 쿠팡만 체크되어 있으면 항상 가능.
+  const blockedByNaverRunning = crawlNaver && running;
+  const runDisabled =
+    crawlActionLoading || noSourceSelected || blockedByNaverRunning;
+  const handleClickRun = () => {
+    const sources = [];
+    if (crawlNaver) sources.push("naver");
+    if (crawlCoupang) sources.push("coupang");
+    if (sources.length === 0) return;
+    onRunCrawl(sources);
+  };
 
   return (
     <Card title="설정" className="h-full">
@@ -3503,24 +3525,60 @@ function SettingsPanel({
 
         <div className="border-t border-slate-200 pt-4">
           <div className="text-sm font-medium text-slate-700">크롤링 실행</div>
+          <div className="mt-2 flex items-center gap-4">
+            <label className="flex items-center gap-1.5 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-slate-300"
+                checked={crawlNaver}
+                onChange={(e) => setCrawlNaver(e.target.checked)}
+              />
+              네이버
+            </label>
+            <label className="flex items-center gap-1.5 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-slate-300"
+                checked={crawlCoupang}
+                onChange={(e) => setCrawlCoupang(e.target.checked)}
+              />
+              쿠팡
+              <span className="ml-1 text-[10px] text-slate-400">
+                (회사 와이파이/VPN 필요)
+              </span>
+            </label>
+          </div>
           <div className="mt-2">
-            <PrimaryButton
-              onClick={onRunCrawl}
-              disabled={running || crawlActionLoading}
-            >
-              {running
-                ? "크롤링 실행 중..."
+            <PrimaryButton onClick={handleClickRun} disabled={runDisabled}>
+              {blockedByNaverRunning
+                ? "네이버 크롤링 실행 중..."
                 : crawlActionLoading
                   ? "요청 중..."
                   : "지금 크롤링 실행"}
             </PrimaryButton>
           </div>
+          {noSourceSelected && (
+            <div className="mt-1 text-xs text-amber-600">
+              네이버 또는 쿠팡 중 하나 이상 선택하세요.
+            </div>
+          )}
           <div className="mt-2 text-xs text-slate-500">
-            최근 시작: {lastStarted} / 최근 종료: {lastFinished}
+            네이버 — 최근 시작: {lastStarted} / 최근 종료: {lastFinished}
           </div>
           {crawlStatus?.last_error && (
             <div className="mt-1 text-xs text-red-600">
-              최근 오류: {String(crawlStatus.last_error)}
+              네이버 최근 오류: {String(crawlStatus.last_error)}
+            </div>
+          )}
+          {coupangLastTriggered && (
+            <div className="mt-1 text-xs text-slate-500">
+              쿠팡 — 최근 트리거: {coupangLastTriggered}
+              {coupangTriggerStatus && ` (${coupangTriggerStatus})`}
+            </div>
+          )}
+          {coupangTriggerStatus === "error" && coupangTriggerMessage && (
+            <div className="mt-1 text-xs text-red-600">
+              쿠팡 트리거 실패: {coupangTriggerMessage}
             </div>
           )}
         </div>
@@ -6936,11 +6994,16 @@ export default function App() {
     };
   }, [refreshDashboardData, hasToken]);
 
-  const handleRunCrawlNow = async () => {
-    if (!getDashboardToken() || crawlActionLoading || crawlStatus.running) return;
+  const handleRunCrawlNow = async (sources = ["naver"]) => {
+    if (!getDashboardToken() || crawlActionLoading) return;
+    const wantsNaver = sources.includes("naver");
+    // 네이버는 로컬 단일 실행이라 이미 도는 중이면 중복 트리거 차단.
+    // 쿠팡만 트리거하는 경우는 회사 서버 fire-and-forget이라 항상 허용.
+    if (wantsNaver && crawlStatus.running) return;
     setCrawlActionLoading(true);
-    const result = await runCrawlNow();
-    if (result?.status === "started") {
+    const result = await runCrawlNow(sources);
+    const naverStarted = result?.naver?.started ?? (result?.status === "started" && wantsNaver);
+    if (naverStarted) {
       setCrawlStatus((prev) => ({ ...prev, running: true, last_error: null }));
       wasCrawlRunningRef.current = true;
     }
