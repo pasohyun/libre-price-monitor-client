@@ -8,6 +8,7 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  ReferenceDot,
 } from "recharts";
 import { getRangeReport } from "../api/reports";
 import { API_BASE_URL } from "../config/api";
@@ -83,6 +84,106 @@ const printStyles = `
   @page { margin: 10mm; }
 }
 `;
+
+// 점 클릭 시 라벨을 화면에 고정/해제. 호버 툴팁은 그대로 동작.
+function SellerPriceChart({ chartData }: { chartData: any[] }) {
+  const [pinned, setPinned] = useState<Set<number>>(new Set());
+
+  const togglePin = (idx: number) => {
+    setPinned((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
+
+  const data = chartData.map((p: any, idx: number) => ({ ...p, _index: idx }));
+
+  // 핀 상태에 따라 점 모양 다르게 + 클릭 가능
+  const PinnableDot = (props: any) => {
+    const { cx, cy, payload } = props;
+    if (cx == null || cy == null) return null;
+    const idx = payload?._index;
+    const isPinned = typeof idx === "number" && pinned.has(idx);
+    return (
+      <circle
+        cx={cx}
+        cy={cy}
+        r={isPinned ? 5 : 3}
+        fill={isPinned ? "#1d4ed8" : "#2563eb"}
+        stroke="#fff"
+        strokeWidth={isPinned ? 2 : 1}
+        style={{ cursor: "pointer" }}
+        onClick={() => {
+          if (typeof idx === "number") togglePin(idx);
+        }}
+      />
+    );
+  };
+
+  return (
+    <ResponsiveContainer width="100%" height={200}>
+      <LineChart data={data}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+        <XAxis
+          dataKey="_index"
+          tick={{ fontSize: 11 }}
+          tickFormatter={(idx: number) => {
+            const point = chartData[idx];
+            if (!point) return "";
+            const prev = idx > 0 ? chartData[idx - 1] : null;
+            if (!prev || prev.date !== point.date) return point.date.replace(/^\d{2}/, "");
+            return "";
+          }}
+          interval={0}
+        />
+        <YAxis
+          tick={{ fontSize: 11 }}
+          tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`}
+          domain={["dataMin - 1000", "dataMax + 1000"]}
+        />
+        <Tooltip
+          labelFormatter={(idx: number) => {
+            const point = chartData[idx];
+            return point ? (point.time ? `${point.date} ${point.time}` : point.date) : "";
+          }}
+          formatter={(v: number) => [fmtMoney(v), "최저 단가"]}
+        />
+        <Line
+          type="monotone"
+          dataKey="min_price"
+          stroke="#2563eb"
+          strokeWidth={2}
+          dot={<PinnableDot />}
+          activeDot={{ r: 5, cursor: "pointer" }}
+          isAnimationActive={false}
+        />
+        {[...pinned].map((idx) => {
+          const p = chartData[idx];
+          if (!p) return null;
+          const labelText = `${p.date}${p.time ? ` ${p.time}` : ""} · ${fmtMoney(p.min_price)}`;
+          return (
+            <ReferenceDot
+              key={idx}
+              x={idx}
+              y={p.min_price}
+              r={0}
+              ifOverflow="extendDomain"
+              isFront
+              label={{
+                value: labelText,
+                position: "top",
+                fontSize: 11,
+                fill: "#1f2937",
+              }}
+            />
+          );
+        })}
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
 
 export default function RangeReportPage() {
   const [startDate, setStartDate] = useState(thirtyDaysAgoStr());
@@ -927,58 +1028,9 @@ export default function RangeReportPage() {
                                 marginBottom: 8,
                               }}
                             >
-                              일별 최저가 추이
+                              일별 최저가 추이 <span style={{ fontWeight: 400, opacity: 0.6, fontSize: 11 }}>(점 클릭 시 라벨 고정 · 다시 클릭하면 해제)</span>
                             </div>
-                            <ResponsiveContainer width="100%" height={200}>
-                              <LineChart
-                                data={c.chart_data.map((p: any, idx: number) => ({
-                                  ...p,
-                                  _index: idx,
-                                }))}
-                              >
-                                <CartesianGrid
-                                  strokeDasharray="3 3"
-                                  stroke="#e5e7eb"
-                                />
-                                <XAxis
-                                  dataKey="_index"
-                                  tick={{ fontSize: 11 }}
-                                  tickFormatter={(idx: number) => {
-                                    const point = c.chart_data[idx];
-                                    if (!point) return "";
-                                    const prev = idx > 0 ? c.chart_data[idx - 1] : null;
-                                    if (!prev || prev.date !== point.date) return point.date.replace(/^\d{2}/, "");
-                                    return "";
-                                  }}
-                                  interval={0}
-                                />
-                                <YAxis
-                                  tick={{ fontSize: 11 }}
-                                  tickFormatter={(v: number) =>
-                                    `${(v / 1000).toFixed(0)}k`
-                                  }
-                                  domain={["dataMin - 1000", "dataMax + 1000"]}
-                                />
-                                <Tooltip
-                                  labelFormatter={(idx: number) => {
-                                    const point = c.chart_data[idx];
-                                    return point ? (point.time ? `${point.date} ${point.time}` : point.date) : "";
-                                  }}
-                                  formatter={(v: number) => [
-                                    fmtMoney(v),
-                                    "최저 단가",
-                                  ]}
-                                />
-                                <Line
-                                  type="monotone"
-                                  dataKey="min_price"
-                                  stroke="#2563eb"
-                                  strokeWidth={2}
-                                  dot={{ r: 2 }}
-                                  activeDot={{ r: 4 }}
-                                />
-                              </LineChart>
-                            </ResponsiveContainer>
+                            <SellerPriceChart chartData={c.chart_data} />
 
                             {/* 기준가 라인 표시 */}
                             <div
