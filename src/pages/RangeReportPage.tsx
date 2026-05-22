@@ -100,22 +100,27 @@ function SellerPriceChart({ chartData }: { chartData: any[] }) {
 
   const data = chartData.map((p: any, idx: number) => ({ ...p, _index: idx }));
 
-  // 핀 상태에 따라 점 모양 다르게 + 클릭 가능
+  // 핀 상태/활성 상태에 따라 점 모양 다르게 + 클릭 가능
+  // dot과 activeDot 모두 이 컴포넌트로 써서 어느 쪽을 클릭해도 togglePin이 동작하게 한다.
   const PinnableDot = (props: any) => {
     const { cx, cy, payload } = props;
     if (cx == null || cy == null) return null;
     const idx = payload?._index;
     const isPinned = typeof idx === "number" && pinned.has(idx);
+    // active(호버 중)이거나 pinned면 크게, 아니면 작게
+    const isActive = !!props.active || isPinned;
+    const r = isActive ? 5 : 3;
     return (
       <circle
         cx={cx}
         cy={cy}
-        r={isPinned ? 5 : 3}
+        r={r}
         fill={isPinned ? "#1d4ed8" : "#2563eb"}
         stroke="#fff"
         strokeWidth={isPinned ? 2 : 1}
-        style={{ cursor: "pointer" }}
-        onClick={() => {
+        style={{ cursor: "pointer", pointerEvents: "all" }}
+        onClick={(e) => {
+          e.stopPropagation();
           if (typeof idx === "number") togglePin(idx);
         }}
       />
@@ -156,7 +161,7 @@ function SellerPriceChart({ chartData }: { chartData: any[] }) {
           stroke="#2563eb"
           strokeWidth={2}
           dot={<PinnableDot />}
-          activeDot={{ r: 5, cursor: "pointer" }}
+          activeDot={<PinnableDot active />}
           isAnimationActive={false}
         />
         {[...pinned].map((idx) => {
