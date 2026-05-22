@@ -9,6 +9,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceDot,
+  Label,
 } from "recharts";
 import { getRangeReport } from "../api/reports";
 import { API_BASE_URL } from "../config/api";
@@ -167,7 +168,8 @@ function SellerPriceChart({ chartData }: { chartData: any[] }) {
         {[...pinned].map((idx) => {
           const p = chartData[idx];
           if (!p) return null;
-          const labelText = `${p.date}${p.time ? ` ${p.time}` : ""} · ${fmtMoney(p.min_price)}`;
+          const line1 = `${p.date}${p.time ? ` ${p.time}` : ""}`;
+          const line2 = `최저 단가 : ${fmtMoney(p.min_price)}`;
           return (
             <ReferenceDot
               key={idx}
@@ -176,13 +178,63 @@ function SellerPriceChart({ chartData }: { chartData: any[] }) {
               r={0}
               ifOverflow="extendDomain"
               isFront
-              label={{
-                value: labelText,
-                position: "top",
-                fontSize: 11,
-                fill: "#1f2937",
-              }}
-            />
+            >
+              <Label
+                content={(props: any) => {
+                  const vb = props?.viewBox;
+                  if (!vb || typeof vb.x !== "number" || typeof vb.y !== "number") return null;
+                  const boxW = 150;
+                  const boxH = 50;
+                  const gap = 14;
+                  // 위쪽에 박스 띄움 (점 위로 gap만큼 떨어진 위치)
+                  const left = vb.x - boxW / 2;
+                  const top = vb.y - boxH - gap;
+                  return (
+                    <g pointerEvents="none">
+                      {/* 박스 → 점 연결선 */}
+                      <line
+                        x1={vb.x}
+                        y1={top + boxH}
+                        x2={vb.x}
+                        y2={vb.y - 6}
+                        stroke="#9ca3af"
+                        strokeWidth={1}
+                        strokeDasharray="2 2"
+                      />
+                      <rect
+                        x={left}
+                        y={top}
+                        width={boxW}
+                        height={boxH}
+                        fill="#ffffff"
+                        stroke="#d1d5db"
+                        strokeWidth={1}
+                        rx={4}
+                      />
+                      <text
+                        x={vb.x}
+                        y={top + 19}
+                        textAnchor="middle"
+                        fontSize={12}
+                        fill="#374151"
+                      >
+                        {line1}
+                      </text>
+                      <text
+                        x={vb.x}
+                        y={top + 38}
+                        textAnchor="middle"
+                        fontSize={12}
+                        fill="#2563eb"
+                        fontWeight={600}
+                      >
+                        {line2}
+                      </text>
+                    </g>
+                  );
+                }}
+              />
+            </ReferenceDot>
           );
         })}
       </LineChart>
