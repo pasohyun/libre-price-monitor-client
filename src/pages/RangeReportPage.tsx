@@ -8,8 +8,7 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  ReferenceDot,
-  Label,
+  Customized,
 } from "recharts";
 import { getRangeReport } from "../api/reports";
 import { API_BASE_URL } from "../config/api";
@@ -165,40 +164,45 @@ function SellerPriceChart({ chartData }: { chartData: any[] }) {
           activeDot={<PinnableDot active />}
           isAnimationActive={false}
         />
-        {[...pinned].map((idx) => {
-          const p = chartData[idx];
-          if (!p) return null;
-          const line1 = `${p.date}${p.time ? ` ${p.time}` : ""}`;
-          const line2 = `최저 단가 : ${fmtMoney(p.min_price)}`;
-          return (
-            <ReferenceDot
-              key={idx}
-              x={idx}
-              y={p.min_price}
-              r={0}
-              ifOverflow="extendDomain"
-              isFront
-            >
-              <Label
-                content={(props: any) => {
-                  const vb = props?.viewBox;
-                  if (!vb || typeof vb.x !== "number" || typeof vb.y !== "number") return null;
+        {/*
+          핀 라벨 박스는 Line 뒤에 Customized로 그려서 SVG 페인트 순서상
+          모든 선/점 위에 오게 한다. ReferenceDot+isFront로는 line의 dot이
+          박스 위로 튀어나오는 케이스가 있어 명시적으로 마지막 레이어로 둠.
+        */}
+        <Customized
+          component={(chartProps: any) => {
+            const xMap = chartProps?.xAxisMap;
+            const yMap = chartProps?.yAxisMap;
+            if (!xMap || !yMap) return null;
+            const xAxis: any = Object.values(xMap)[0];
+            const yAxis: any = Object.values(yMap)[0];
+            if (!xAxis?.scale || !yAxis?.scale) return null;
+            const plotTop = (yAxis.y as number | undefined) ?? 0;
+            return (
+              <g pointerEvents="none">
+                {[...pinned].map((idx) => {
+                  const p = chartData[idx];
+                  if (!p) return null;
+                  const cx = xAxis.scale(idx);
+                  const cy = yAxis.scale(p.min_price);
+                  if (typeof cx !== "number" || typeof cy !== "number") return null;
+                  const line1 = `${p.date}${p.time ? ` ${p.time}` : ""}`;
+                  const line2 = `최저 단가 : ${fmtMoney(p.min_price)}`;
                   const boxW = 150;
                   const boxH = 50;
                   const gap = 14;
-                  // 점이 상단에 너무 가까우면 박스를 아래쪽으로 뒤집어 표시
-                  const flipBelow = vb.y - boxH - gap < 4;
-                  const left = vb.x - boxW / 2;
-                  const top = flipBelow ? vb.y + gap : vb.y - boxH - gap;
-                  // 박스↔점 연결선 좌표 (위/아래 위치에 따라 반전)
-                  const lineY1 = flipBelow ? vb.y + 6 : top + boxH;
-                  const lineY2 = flipBelow ? top : vb.y - 6;
+                  // 점이 차트 상단에 너무 가까우면 박스를 아래쪽으로 뒤집어 표시
+                  const flipBelow = cy - boxH - gap < plotTop + 4;
+                  const left = cx - boxW / 2;
+                  const top = flipBelow ? cy + gap : cy - boxH - gap;
+                  const lineY1 = flipBelow ? cy + 6 : top + boxH;
+                  const lineY2 = flipBelow ? top : cy - 6;
                   return (
-                    <g pointerEvents="none">
+                    <g key={idx}>
                       <line
-                        x1={vb.x}
+                        x1={cx}
                         y1={lineY1}
-                        x2={vb.x}
+                        x2={cx}
                         y2={lineY2}
                         stroke="#9ca3af"
                         strokeWidth={1}
@@ -215,7 +219,7 @@ function SellerPriceChart({ chartData }: { chartData: any[] }) {
                         rx={4}
                       />
                       <text
-                        x={vb.x}
+                        x={cx}
                         y={top + 19}
                         textAnchor="middle"
                         fontSize={12}
@@ -224,7 +228,7 @@ function SellerPriceChart({ chartData }: { chartData: any[] }) {
                         {line1}
                       </text>
                       <text
-                        x={vb.x}
+                        x={cx}
                         y={top + 38}
                         textAnchor="middle"
                         fontSize={12}
@@ -235,11 +239,11 @@ function SellerPriceChart({ chartData }: { chartData: any[] }) {
                       </text>
                     </g>
                   );
-                }}
-              />
-            </ReferenceDot>
-          );
-        })}
+                })}
+              </g>
+            );
+          }}
+        />
       </LineChart>
     </ResponsiveContainer>
   );
