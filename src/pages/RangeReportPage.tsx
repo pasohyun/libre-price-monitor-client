@@ -148,7 +148,7 @@ function SellerPriceChart({ chartData }: { chartData: any[] }) {
         cx={cx}
         cy={cy}
         r={r}
-        fill={isPinned ? "#1d4ed8" : "#2563eb"}
+        fill={isPinned ? "#dc2626" : "#2563eb"}
         stroke="#fff"
         strokeWidth={isPinned ? 2 : 1}
         style={{ cursor: "pointer", pointerEvents: "all" }}
