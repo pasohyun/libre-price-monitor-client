@@ -1,5 +1,5 @@
 // src/pages/RangeReportPage.tsx
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   LineChart,
   Line,
@@ -100,6 +100,19 @@ function SellerPriceChart({ chartData }: { chartData: any[] }) {
 
   const data = chartData.map((p: any, idx: number) => ({ ...p, _index: idx }));
 
+  // 각 날짜의 "첫 등장 인덱스" 모음 → 그 중에서 일정 간격으로만 라벨 노출 (겹침 방지)
+  // 기간이 길어질수록 step이 커져서 라벨이 자동으로 솎아짐.
+  const MAX_DATE_LABELS = 8;
+  const visibleDateIndices = useMemo(() => {
+    const firstIndices: number[] = [];
+    chartData.forEach((p: any, idx: number) => {
+      const prev = idx > 0 ? chartData[idx - 1] : null;
+      if (!prev || prev.date !== p.date) firstIndices.push(idx);
+    });
+    const step = Math.max(1, Math.ceil(firstIndices.length / MAX_DATE_LABELS));
+    return new Set(firstIndices.filter((_, i) => i % step === 0));
+  }, [chartData]);
+
   // 핀 상태/활성 상태에 따라 점 모양 다르게 + 클릭 가능
   // dot과 activeDot 모두 이 컴포넌트로 써서 어느 쪽을 클릭해도 togglePin이 동작하게 한다.
   const PinnableDot = (props: any) => {
@@ -135,11 +148,9 @@ function SellerPriceChart({ chartData }: { chartData: any[] }) {
           dataKey="_index"
           tick={{ fontSize: 11 }}
           tickFormatter={(idx: number) => {
+            if (!visibleDateIndices.has(idx)) return "";
             const point = chartData[idx];
-            if (!point) return "";
-            const prev = idx > 0 ? chartData[idx - 1] : null;
-            if (!prev || prev.date !== point.date) return point.date.replace(/^\d{2}/, "");
-            return "";
+            return point ? point.date.replace(/^\d{2}/, "") : "";
           }}
           interval={0}
         />
