@@ -1,5 +1,5 @@
 // src/pages/RangeReportPage.tsx
-import React, { useMemo, useState } from "react";
+import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   LineChart,
   Line,
@@ -8,7 +8,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Customized,
 } from "recharts";
 import { getRangeReport } from "../api/reports";
 import { API_BASE_URL } from "../config/api";
@@ -85,9 +84,30 @@ const printStyles = `
 }
 `;
 
+// Recharts LineChart 기본값에 맞춘 plot 영역 추정값 (HTML overlay로 핀 박스 위치 계산용)
+// 정확한 값은 Recharts 내부에서 동적이지만, 기본 margin + YAxis width 60 + XAxis height 30 기준 근사.
+const CHART_HEIGHT = 200;
+const PLOT_LEFT = 65; // chart left margin(5) + YAxis width(60)
+const PLOT_RIGHT = 5;
+const PLOT_TOP = 5;
+const PLOT_BOTTOM = 35; // chart bottom margin(5) + XAxis height(30)
+
 // 점 클릭 시 라벨을 화면에 고정/해제. 호버 툴팁은 그대로 동작.
 function SellerPriceChart({ chartData }: { chartData: any[] }) {
   const [pinned, setPinned] = useState<Set<number>>(new Set());
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  useLayoutEffect(() => {
+    if (!wrapperRef.current) return;
+    const update = () => {
+      if (wrapperRef.current) setContainerWidth(wrapperRef.current.offsetWidth);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(wrapperRef.current);
+    return () => observer.disconnect();
+  }, []);
 
   const togglePin = (idx: number) => {
     setPinned((prev) => {
@@ -140,123 +160,106 @@ function SellerPriceChart({ chartData }: { chartData: any[] }) {
     );
   };
 
+  // HTML overlay 박스 위치 계산용 데이터 도메인
+  const prices = chartData
+    .map((p: any) => p.min_price)
+    .filter((v: any) => typeof v === "number");
+  const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
+  const maxPrice = prices.length > 0 ? Math.max(...prices) : 1;
+  const yDomainMin = minPrice - 1000;
+  const yDomainMax = maxPrice + 1000;
+  const yRange = Math.max(1, yDomainMax - yDomainMin);
+  const plotWidth = Math.max(0, containerWidth - PLOT_LEFT - PLOT_RIGHT);
+  const plotHeight = CHART_HEIGHT - PLOT_TOP - PLOT_BOTTOM;
+  const dataLen = chartData.length;
+
   return (
-    <ResponsiveContainer width="100%" height={200}>
-      <LineChart data={data}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-        <XAxis
-          dataKey="_index"
-          tick={{ fontSize: 11 }}
-          tickFormatter={(idx: number) => {
-            if (!visibleDateIndices.has(idx)) return "";
-            const point = chartData[idx];
-            return point ? point.date.replace(/^\d{2}/, "") : "";
-          }}
-          interval={0}
-        />
-        <YAxis
-          tick={{ fontSize: 11 }}
-          tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`}
-          domain={["dataMin - 1000", "dataMax + 1000"]}
-        />
-        <Tooltip
-          labelFormatter={(idx: number) => {
-            const point = chartData[idx];
-            return point ? (point.time ? `${point.date} ${point.time}` : point.date) : "";
-          }}
-          formatter={(v: number) => [fmtMoney(v), "최저 단가"]}
-        />
-        <Line
-          type="monotone"
-          dataKey="min_price"
-          stroke="#2563eb"
-          strokeWidth={2}
-          dot={<PinnableDot />}
-          activeDot={<PinnableDot active />}
-          isAnimationActive={false}
-        />
-        {/*
-          핀 라벨 박스는 Line 뒤에 Customized로 그려서 SVG 페인트 순서상
-          모든 선/점 위에 오게 한다. ReferenceDot+isFront로는 line의 dot이
-          박스 위로 튀어나오는 케이스가 있어 명시적으로 마지막 레이어로 둠.
-        */}
-        <Customized
-          component={(chartProps: any) => {
-            const xMap = chartProps?.xAxisMap;
-            const yMap = chartProps?.yAxisMap;
-            if (!xMap || !yMap) return null;
-            const xAxis: any = Object.values(xMap)[0];
-            const yAxis: any = Object.values(yMap)[0];
-            if (!xAxis?.scale || !yAxis?.scale) return null;
-            const plotTop = (yAxis.y as number | undefined) ?? 0;
-            return (
-              <g pointerEvents="none">
-                {[...pinned].map((idx) => {
-                  const p = chartData[idx];
-                  if (!p) return null;
-                  const cx = xAxis.scale(idx);
-                  const cy = yAxis.scale(p.min_price);
-                  if (typeof cx !== "number" || typeof cy !== "number") return null;
-                  const line1 = `${p.date}${p.time ? ` ${p.time}` : ""}`;
-                  const line2 = `최저 단가 : ${fmtMoney(p.min_price)}`;
-                  const boxW = 150;
-                  const boxH = 50;
-                  const gap = 14;
-                  // 점이 차트 상단에 너무 가까우면 박스를 아래쪽으로 뒤집어 표시
-                  const flipBelow = cy - boxH - gap < plotTop + 4;
-                  const left = cx - boxW / 2;
-                  const top = flipBelow ? cy + gap : cy - boxH - gap;
-                  const lineY1 = flipBelow ? cy + 6 : top + boxH;
-                  const lineY2 = flipBelow ? top : cy - 6;
-                  return (
-                    <g key={idx}>
-                      <line
-                        x1={cx}
-                        y1={lineY1}
-                        x2={cx}
-                        y2={lineY2}
-                        stroke="#9ca3af"
-                        strokeWidth={1}
-                        strokeDasharray="2 2"
-                      />
-                      <rect
-                        x={left}
-                        y={top}
-                        width={boxW}
-                        height={boxH}
-                        fill="#ffffff"
-                        stroke="#d1d5db"
-                        strokeWidth={1}
-                        rx={4}
-                      />
-                      <text
-                        x={cx}
-                        y={top + 19}
-                        textAnchor="middle"
-                        fontSize={12}
-                        fill="#374151"
-                      >
-                        {line1}
-                      </text>
-                      <text
-                        x={cx}
-                        y={top + 38}
-                        textAnchor="middle"
-                        fontSize={12}
-                        fill="#2563eb"
-                        fontWeight={600}
-                      >
-                        {line2}
-                      </text>
-                    </g>
-                  );
-                })}
-              </g>
-            );
-          }}
-        />
-      </LineChart>
-    </ResponsiveContainer>
+    <div ref={wrapperRef} style={{ position: "relative", width: "100%" }}>
+      <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
+        <LineChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <XAxis
+            dataKey="_index"
+            tick={{ fontSize: 11 }}
+            tickFormatter={(idx: number) => {
+              if (!visibleDateIndices.has(idx)) return "";
+              const point = chartData[idx];
+              return point ? point.date.replace(/^\d{2}/, "") : "";
+            }}
+            interval={0}
+          />
+          <YAxis
+            tick={{ fontSize: 11 }}
+            tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`}
+            domain={["dataMin - 1000", "dataMax + 1000"]}
+          />
+          <Tooltip
+            labelFormatter={(idx: number) => {
+              const point = chartData[idx];
+              return point ? (point.time ? `${point.date} ${point.time}` : point.date) : "";
+            }}
+            formatter={(v: number) => [fmtMoney(v), "최저 단가"]}
+          />
+          <Line
+            type="monotone"
+            dataKey="min_price"
+            stroke="#2563eb"
+            strokeWidth={2}
+            dot={<PinnableDot />}
+            activeDot={<PinnableDot active />}
+            isAnimationActive={false}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+      {/* HTML overlay — SVG 위에 떠 있어서 line/dot이 박스를 가릴 일 없음.
+          위치는 Recharts 기본 margin 가정으로 근사. 약간의 오차 가능. */}
+      {containerWidth > 0 &&
+        [...pinned].map((idx) => {
+          const p = chartData[idx];
+          if (!p) return null;
+          const xRatio = dataLen > 1 ? idx / (dataLen - 1) : 0.5;
+          const cx = PLOT_LEFT + xRatio * plotWidth;
+          const yRatio = (p.min_price - yDomainMin) / yRange;
+          const cy = PLOT_TOP + (1 - yRatio) * plotHeight;
+          const boxW = 150;
+          const boxH = 50;
+          const gap = 14;
+          const flipBelow = cy - boxH - gap < PLOT_TOP + 4;
+          const left = cx - boxW / 2;
+          const top = flipBelow ? cy + gap : cy - boxH - gap;
+          return (
+            <div
+              key={idx}
+              style={{
+                position: "absolute",
+                left,
+                top,
+                width: boxW,
+                height: boxH,
+                background: "#fff",
+                border: "1px solid #d1d5db",
+                borderRadius: 4,
+                padding: "6px 8px",
+                fontSize: 12,
+                textAlign: "center",
+                boxSizing: "border-box",
+                boxShadow: "0 2px 4px rgba(0,0,0,0.08)",
+                pointerEvents: "none",
+                zIndex: 10,
+                lineHeight: 1.4,
+              }}
+            >
+              <div style={{ color: "#374151" }}>
+                {p.date}
+                {p.time ? ` ${p.time}` : ""}
+              </div>
+              <div style={{ color: "#2563eb", fontWeight: 600 }}>
+                최저 단가 : {fmtMoney(p.min_price)}
+              </div>
+            </div>
+          );
+        })}
+    </div>
   );
 }
 
