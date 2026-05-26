@@ -186,17 +186,20 @@ function SellerPriceChart({ chartData }: { chartData: any[] }) {
                   const boxW = 150;
                   const boxH = 50;
                   const gap = 14;
-                  // 위쪽에 박스 띄움 (점 위로 gap만큼 떨어진 위치)
+                  // 점이 상단에 너무 가까우면 박스를 아래쪽으로 뒤집어 표시
+                  const flipBelow = vb.y - boxH - gap < 4;
                   const left = vb.x - boxW / 2;
-                  const top = vb.y - boxH - gap;
+                  const top = flipBelow ? vb.y + gap : vb.y - boxH - gap;
+                  // 박스↔점 연결선 좌표 (위/아래 위치에 따라 반전)
+                  const lineY1 = flipBelow ? vb.y + 6 : top + boxH;
+                  const lineY2 = flipBelow ? top : vb.y - 6;
                   return (
                     <g pointerEvents="none">
-                      {/* 박스 → 점 연결선 */}
                       <line
                         x1={vb.x}
-                        y1={top + boxH}
+                        y1={lineY1}
                         x2={vb.x}
-                        y2={vb.y - 6}
+                        y2={lineY2}
                         stroke="#9ca3af"
                         strokeWidth={1}
                         strokeDasharray="2 2"
