@@ -5437,6 +5437,9 @@ function SellerDetail({
   const [filterDate, setFilterDate] = useState("all");
   const [filterTime, setFilterTime] = useState("all");
   const [filterPack, setFilterPack] = useState("all");
+  // 단가 필터 (사용자가 입력한 가격으로만 추가 필터링; 기준가와 별개)
+  const [filterPriceMin, setFilterPriceMin] = useState("");
+  const [filterPriceMax, setFilterPriceMax] = useState("");
   const [selectedProductIds, setSelectedProductIds] = useState(() => new Set());
   const [deletingRows, setDeletingRows] = useState(false);
   const [vendorMemos, setVendorMemos] = useState([]);
@@ -5674,14 +5677,16 @@ function SellerDetail({
     return [...dates].sort();
   }, [timeline]);
 
-  // 날짜/시간/수량 필터 + 기준가 이하 필터링
+  // 날짜/시간/수량/단가 필터 (기준가 강제 필터 제거 — 사용자가 단가 필터로 직접 조정)
   const filteredTimeline = useMemo(() => {
-    const thr =
-      typeof settings.threshold === "string" && settings.threshold === ""
-        ? Infinity
-        : Number(settings.threshold) || Infinity;
+    const minP = filterPriceMin === "" ? -Infinity : Number(filterPriceMin) || -Infinity;
+    const maxP = filterPriceMax === "" ? Infinity : Number(filterPriceMax) || Infinity;
     return timeline.filter((t) => {
-      if (t.unitPrice > thr) return false;
+      const price = Number(t.unitPrice);
+      if (Number.isFinite(price)) {
+        if (price < minP) return false;
+        if (price > maxP) return false;
+      }
       if (filterDate !== "all") {
         const d = parseDateLike(t.capturedAt);
         if (!d) return false;
@@ -5698,15 +5703,20 @@ function SellerDetail({
       }
       return true;
     });
-  }, [timeline, settings.threshold, filterDate, filterTime, filterPack]);
+  }, [timeline, filterDate, filterTime, filterPack, filterPriceMin, filterPriceMax]);
+
+  const hasActiveFilter =
+    filterDate !== "all" ||
+    filterTime !== "all" ||
+    filterPack !== "all" ||
+    filterPriceMin !== "" ||
+    filterPriceMax !== "";
 
   // 그래프용 데이터: 필터 적용 시 필터된 데이터, 미적용 시 전체 데이터
-  // (SingleSellerPriceTrend 내부에서 시각별 최저가 처리)
   const chartTimeline = useMemo(() => {
-    const isFiltered = filterDate !== "all" || filterTime !== "all" || filterPack !== "all";
-    if (isFiltered) return filteredTimeline;
+    if (hasActiveFilter) return filteredTimeline;
     return timeline;
-  }, [timeline, filteredTimeline, filterDate, filterTime, filterPack]);
+  }, [timeline, filteredTimeline, hasActiveFilter]);
 
   const rows = useMemo(
     () =>
@@ -6599,15 +6609,19 @@ function SellerDetail({
               type="button"
               onClick={() => setFilterOpen((v) => !v)}
               className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
-                filterDate !== "all" || filterTime !== "all" || filterPack !== "all"
+                hasActiveFilter
                   ? "border-emerald-300 bg-emerald-50 text-emerald-700"
                   : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
               }`}
             >
               <span>필터</span>
-              {(filterDate !== "all" || filterTime !== "all" || filterPack !== "all") && (
+              {hasActiveFilter && (
                 <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] text-white">
-                  {(filterDate !== "all" ? 1 : 0) + (filterTime !== "all" ? 1 : 0) + (filterPack !== "all" ? 1 : 0)}
+                  {(filterDate !== "all" ? 1 : 0) +
+                    (filterTime !== "all" ? 1 : 0) +
+                    (filterPack !== "all" ? 1 : 0) +
+                    (filterPriceMin !== "" ? 1 : 0) +
+                    (filterPriceMax !== "" ? 1 : 0)}
                 </span>
               )}
               <span className="text-xs">{filterOpen ? "▲" : "▼"}</span>
@@ -6656,24 +6670,51 @@ function SellerDetail({
                 ))}
               </select>
             </div>
-            {(filterDate !== "all" || filterTime !== "all" || filterPack !== "all") && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-slate-600">단가</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                placeholder="이상"
+                value={filterPriceMin}
+                onChange={(e) => setFilterPriceMin(e.target.value)}
+                className="w-24 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+              />
+              <span className="text-slate-400">~</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                placeholder="이하"
+                value={filterPriceMax}
+                onChange={(e) => setFilterPriceMax(e.target.value)}
+                className="w-24 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+              />
+              <span className="text-xs text-slate-400">원</span>
+            </div>
+            {hasActiveFilter && (
               <button
                 type="button"
-                onClick={() => { setFilterDate("all"); setFilterTime("all"); setFilterPack("all"); }}
+                onClick={() => {
+                  setFilterDate("all");
+                  setFilterTime("all");
+                  setFilterPack("all");
+                  setFilterPriceMin("");
+                  setFilterPriceMax("");
+                }}
                 className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100"
               >
                 초기화
               </button>
             )}
             <span className="text-xs text-slate-400">
-              {filteredTimeline.length}건
+              {filteredTimeline.length}건 / 전체 {timeline.length}건
             </span>
           </div>
         )}
         <Table
           columns={columns}
           rows={rows}
-          emptyText="기준가 이하 데이터가 없습니다."
+          emptyText={hasActiveFilter ? "필터 조건에 맞는 데이터가 없습니다." : "수집된 데이터가 없습니다."}
           pageSize={20}
         />
       </Card>
