@@ -4885,8 +4885,12 @@ function ChannelSellers({
 
   // API 데이터가 있으면 사용, 없으면 offers에서 동적 추출
   const sellers = useMemo(() => {
-    // 네이버: tracked-malls summary API 데이터 사용
-    if (channelKey === "naver" && mallsSummary?.data?.length > 0) {
+    // 네이버/쿠팡: tracked-malls summary API 데이터 사용 (전체 기간 한 번이라도 등장한 mall 모두 포함)
+    // → 그 회차에 0건이었던 매장(닥터다이어리/글루코핏 등)도 카드 자체는 항상 노출
+    if (
+      (channelKey === "naver" || channelKey === "coupang") &&
+      mallsSummary?.data?.length > 0
+    ) {
       const summarySellers = mallsSummary.data.map((mall) => ({
         seller: mall.mall_name,
         currentConsideredUnitPrice: mall.current_price,
@@ -4901,23 +4905,23 @@ function ChannelSellers({
         ),
       }));
 
-      // 주요 4개 외의 네이버 셀러도 항상 보이도록 offers 기반 동적 셀러를 병합한다.
+      // 주요 셀러 외의 동적 셀러도 항상 보이도록 offers 기반으로 병합한다 (현재 채널만).
       const threshold = Number(settings.threshold) || Infinity;
-      const naverOfferMap = new Map();
+      const offerMap = new Map();
       offers
-        .filter((o) => o.channel === "naver")
+        .filter((o) => o.channel === channelKey)
         .forEach((o) => {
           const name = (o.seller || "").trim();
           if (!name || name === "-") return;
-          if (!naverOfferMap.has(name)) {
-            naverOfferMap.set(name, { prices: [], belowCount: 0 });
+          if (!offerMap.has(name)) {
+            offerMap.set(name, { prices: [], belowCount: 0 });
           }
-          const entry = naverOfferMap.get(name);
+          const entry = offerMap.get(name);
           entry.prices.push(o.unitPrice || 0);
           if (o.unitPrice <= threshold) entry.belowCount++;
         });
 
-      const offerSellers = Array.from(naverOfferMap.entries()).map(([name, data]) => {
+      const offerSellers = Array.from(offerMap.entries()).map(([name, data]) => {
         const prices = data.prices.filter((p) => p > 0);
         const currentPrice = prices[prices.length - 1] || 0;
         const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
